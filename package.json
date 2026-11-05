@@ -1,0 +1,10 @@
+{
+  "name": "cabo-scorekeeper",
+  "version": "1.0.0",
+  "description": "Mobile-first, 100% offline-capable Progressive Web App (PWA) for tracking scores in the card game Cabo.",
+  "scripts": {
+    "start": "npx serve . -l 3000"
+  },
+  "keywords": ["cabo", "scorekeeper", "pwa", "card-game", "offline"],
+  "license": "MIT"
+}
