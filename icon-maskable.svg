@@ -1,19 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="boxGreen" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#65B741"/>
-      <stop offset="100%" stop-color="#3E8E2E"/>
-    </linearGradient>
-    <linearGradient id="horn" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FDE047"/>
-      <stop offset="100%" stop-color="#F59E0B"/>
+    <linearGradient id="parchment" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F7EFE0"/>
+      <stop offset="100%" stop-color="#E6D5B8"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" fill="url(#boxGreen)"/>
-  <rect x="86" y="76" width="340" height="360" rx="52" fill="#FFFFFF" stroke="#FEF08A" stroke-width="8"/>
-  <path d="M 168 416 C 175 335 198 282 222 235 L 206 208 C 202 200 212 192 226 204 L 242 214 C 262 205 285 215 302 238 L 330 280 C 340 296 332 318 312 315 C 295 313 282 302 272 294 C 265 325 274 370 286 416 Z" fill="#1E293B"/>
-  <polygon points="252,215 340,115 280,235" fill="url(#horn)"/>
-  <circle cx="280" cy="252" r="5.5" fill="#FFFFFF"/>
-  <rect x="156" y="344" width="200" height="58" rx="18" fill="#E11D48" stroke="#FDE047" stroke-width="6"/>
-  <text x="256" y="384" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="36" font-weight="900" letter-spacing="4" fill="#FEF08A">CABO</text>
+  <rect width="512" height="512" fill="url(#parchment)"/>
+  <rect x="76" y="76" width="360" height="360" rx="56" fill="none" stroke="#B09772" stroke-width="4"/>
+  <g stroke="#5C4433" stroke-width="7" fill="none" stroke-linecap="round">
+    <circle cx="200" cy="205" r="38" fill="#EFE3CC" fill-opacity="0.6"/>
+    <circle cx="312" cy="205" r="38" fill="#EFE3CC" fill-opacity="0.6"/>
+    <path d="M 238 205 Q 256 190 274 205"/>
+  </g>
+  <text x="256" y="335" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="96" fill="#2C1E14">Cabo</text>
+  <path d="M 156 368 Q 256 392 356 368" fill="none" stroke="#B45309" stroke-width="5" stroke-linecap="round"/>
 </svg>
