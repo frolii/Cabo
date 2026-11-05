@@ -1,27 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1E293B"/>
-      <stop offset="50%" stop-color="#121824"/>
-      <stop offset="100%" stop-color="#0B0F19"/>
-    </linearGradient>
-    <linearGradient id="rainbow" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#F43F5E"/>
-      <stop offset="25%" stop-color="#F59E0B"/>
-      <stop offset="50%" stop-color="#10B981"/>
-      <stop offset="75%" stop-color="#38BDF8"/>
-      <stop offset="100%" stop-color="#A855F7"/>
+    <linearGradient id="boxGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#65B741"/>
+      <stop offset="100%" stop-color="#3E8E2E"/>
     </linearGradient>
     <linearGradient id="horn" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#FDE047"/>
       <stop offset="100%" stop-color="#F59E0B"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" fill="url(#bg)"/>
-  <circle cx="256" cy="256" r="190" fill="none" stroke="url(#rainbow)" stroke-width="10" opacity="0.6"/>
-  <path d="M 160 400 C 168 320 192 268 216 220 L 200 192 C 196 184 208 176 222 188 L 238 198 C 258 190 282 200 300 224 L 330 268 C 340 284 332 306 312 304 C 295 302 282 290 270 282 C 264 314 272 358 285 400 Z" fill="#F8FAFC"/>
-  <polygon points="250,200 342,98 278,220" fill="url(#horn)"/>
-  <circle cx="278" cy="238" r="6" fill="#121824"/>
-  <rect x="156" y="340" width="200" height="52" rx="16" fill="#121824" stroke="#F59E0B" stroke-width="3.5"/>
-  <text x="256" y="376" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="900" letter-spacing="5" fill="#FDE047">CABO</text>
+  <rect width="512" height="512" fill="url(#boxGreen)"/>
+  <rect x="86" y="76" width="340" height="360" rx="52" fill="#FFFFFF" stroke="#FEF08A" stroke-width="8"/>
+  <path d="M 168 416 C 175 335 198 282 222 235 L 206 208 C 202 200 212 192 226 204 L 242 214 C 262 205 285 215 302 238 L 330 280 C 340 296 332 318 312 315 C 295 313 282 302 272 294 C 265 325 274 370 286 416 Z" fill="#1E293B"/>
+  <polygon points="252,215 340,115 280,235" fill="url(#horn)"/>
+  <circle cx="280" cy="252" r="5.5" fill="#FFFFFF"/>
+  <rect x="156" y="344" width="200" height="58" rx="18" fill="#E11D48" stroke="#FDE047" stroke-width="6"/>
+  <text x="256" y="384" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="36" font-weight="900" letter-spacing="4" fill="#FEF08A">CABO</text>
 </svg>

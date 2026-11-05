@@ -1,1154 +1,1038 @@
 /**
- * CABO SCOREKEEPER — 100% Offline-Capable PWA Application Logic
- * Supports Standard (100 pts) & Speed Mode (50 pts), Dealer rotation,
- * Automatic Cabo Call validation (+10 penalty or 0 pts), "12-12-13-13" rule,
- * Kamikaze exact-threshold reset, full round history editing, and Undo stack.
+ * CABO SCOREKEEPER — Radikal vereinfachte, helle deutsche PWA
+ *
+ * Aktive Regeln (dauerhaft aktiv):
+ * 1. Cabo-Ruf: Niedrigste (oder geteilt niedrigste) Kartensumme = 0 Punkte.
+ *    Sonst: Eigene Kartensumme + 5 Strafpunkte.
+ * 2. 12-13er-Regel (Kamikaze): Hält ein Spieler 12-12-13-13, erhält er 0 Punkte
+ *    und alle anderen Spieler bekommen +50 Punkte (Standard 100) bzw. +25 Punkte (Speed 50).
+ * 3. Exakte Punktlandung: Trifft ein Spieler exakt das Limit (100 bzw. 50),
+ *    fällt sein Punktestand einmalig pro Spiel zurück auf die Hälfte (50 bzw. 25).
+ * 4. Ewige Statistik (Siege & gespielte Partien pro Spielername + letzte Spiele)
+ *    verschachtelt im Menü.
  */
 
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'cabo_scorekeeper_state_v1';
-  const IDB_NAME = 'CaboScorekeeperDB';
-  const IDB_STORE = 'stateStore';
+  const STATE_KEY = 'cabo_de_state_v2';
+  const STATS_KEY = 'cabo_de_stats_v2';
 
-  const PLAYER_COLORS = [
-    '#A855F7', // Neon Purple
-    '#34D399', // Mint Green
-    '#38BDF8', // Sky Blue
-    '#F59E0B', // Warm Gold
-    '#FB7185', // Coral Rose
-    '#C084FC', // Soft Lavender
-    '#4ADE80', // Asparagus Green
-    '#FBBF24'  // Amber
-  ];
-
-  // Default initial state
   function createDefaultState() {
     return {
       phase: 'setup', // 'setup' | 'playing'
-      threshold: 100, // 100 (Standard) | 50 (Speed Mode)
-      penaltyMode: 'sum_plus_10', // 'sum_plus_10' | 'flat_10'
-      moonMode: 'others_plus_50', // 'others_plus_50' | 'minus_50'
-      exactResetEnabled: true,    // Kamikaze rule: exact 100 -> 50 (or 50 -> 25)
-      initialDealerIndex: 0,
-      dealerOffset: 0, // Manual dealer nudge offset
-      dismissedGameOver: false,
+      threshold: 100, // 100 (Standard) | 50 (Speed)
+      dealerOffset: 0,
+      matchRecordedInStats: false,
       players: [
-        { id: 'p1', name: 'Player 1', color: PLAYER_COLORS[0] },
-        { id: 'p2', name: 'Player 2', color: PLAYER_COLORS[1] },
-        { id: 'p3', name: 'Player 3', color: PLAYER_COLORS[2] }
+        { id: 'p1', name: 'Spieler 1' },
+        { id: 'p2', name: 'Spieler 2' },
+        { id: 'p3', name: 'Spieler 3' }
       ],
       rounds: []
-      // Each round: { id, roundNumber, caboCallerId: string|'none', rawScores: { [pid]: number }, moonFlags: { [pid]: boolean } }
+      // Jede Runde: { id, caboCallerId: string|null, rawScores: { [pid]: number }, kamikazeHolderId: string|null }
+    };
+  }
+
+  function createDefaultStats() {
+    return {
+      players: {}, // { [normalizedName]: { displayName, wins, gamesPlayed } }
+      recentMatches: [] // [{ id, dateStr, winnerNames, mode, roundsCount }]
     };
   }
 
   let state = createDefaultState();
-  let undoStack = [];
-  const MAX_UNDO = 25;
+  let stats = createDefaultStats();
 
-  // Modal editing state
-  let activeRoundDraft = null;
-  // { isEditing: boolean, roundIndex: number, caboCallerId: string, rawScores: {}, moonFlags: {} }
+  // Entwurf für die aktuell laufende Runde direkt auf dem Hauptscreen
+  let currentDraft = {
+    caboCallerId: 'p1',
+    kamikazeHolderId: null,
+    rawScores: {}
+  };
 
   // =========================================================================
-  // LOCAL PERSISTENCE (localStorage + IndexedDB Mirror)
+  // PERSISTENZ (localStorage)
   // =========================================================================
 
-  function saveState(pushUndoSnapshot = false) {
+  function loadData() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (err) {
-      console.warn('localStorage write failed:', err);
-    }
-    saveToIndexedDB(state);
-    updateUndoButtonUI();
-  }
-
-  function pushUndo() {
-    const snapshot = JSON.stringify(state);
-    if (undoStack.length > 0 && undoStack[undoStack.length - 1] === snapshot) {
-      return;
-    }
-    undoStack.push(snapshot);
-    if (undoStack.length > MAX_UNDO) {
-      undoStack.shift();
-    }
-    updateUndoButtonUI();
-  }
-
-  function triggerUndo() {
-    if (undoStack.length === 0) return;
-    const previousSnapshot = undoStack.pop();
-    try {
-      state = JSON.parse(previousSnapshot);
-      saveState();
-      renderApp();
-      showToast('↩️ Undid last action');
-    } catch (e) {
-      console.error('Undo parse error:', e);
-    }
-  }
-
-  function loadStateFromStorage() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
+      const rawState = localStorage.getItem(STATE_KEY);
+      if (rawState) {
+        const parsed = JSON.parse(rawState);
         if (parsed && Array.isArray(parsed.players) && parsed.players.length >= 2) {
           state = Object.assign(createDefaultState(), parsed);
-          return true;
         }
       }
     } catch (e) {
-      console.warn('Failed to load state from localStorage:', e);
+      console.warn('Fehler beim Laden des Spielstands:', e);
     }
-    return false;
+
+    try {
+      const rawStats = localStorage.getItem(STATS_KEY);
+      if (rawStats) {
+        const parsedStats = JSON.parse(rawStats);
+        if (parsedStats && typeof parsedStats.players === 'object') {
+          stats = Object.assign(createDefaultStats(), parsedStats);
+        }
+      }
+    } catch (e) {
+      console.warn('Fehler beim Laden der Statistik:', e);
+    }
+
+    resetCurrentDraft();
   }
 
-  function openIDB() {
-    return new Promise((resolve, reject) => {
-      if (!('indexedDB' in window)) {
-        return reject(new Error('IndexedDB not supported'));
-      }
-      const req = indexedDB.open(IDB_NAME, 1);
-      req.onupgradeneeded = (e) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains(IDB_STORE)) {
-          db.createObjectStore(IDB_STORE);
-        }
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
+  function saveState() {
+    try {
+      localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.warn('Konnte Spielstand nicht speichern:', e);
+    }
+  }
+
+  function saveStats() {
+    try {
+      localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+    } catch (e) {
+      console.warn('Konnte Statistik nicht speichern:', e);
+    }
+  }
+
+  function resetCurrentDraft() {
+    const firstPlayerId = state.players[0] ? state.players[0].id : null;
+    currentDraft = {
+      caboCallerId: firstPlayerId,
+      kamikazeHolderId: null,
+      rawScores: {}
+    };
+    state.players.forEach((p) => {
+      currentDraft.rawScores[p.id] = 0;
     });
   }
 
-  function saveToIndexedDB(data) {
-    openIDB()
-      .then((db) => {
-        const tx = db.transaction(IDB_STORE, 'readwrite');
-        tx.objectStore(IDB_STORE).put(JSON.parse(JSON.stringify(data)), 'latest');
-      })
-      .catch(() => {});
-  }
-
-  function loadFromIndexedDBFallback() {
-    return openIDB()
-      .then((db) => {
-        return new Promise((resolve) => {
-          const tx = db.transaction(IDB_STORE, 'readonly');
-          const req = tx.objectStore(IDB_STORE).get('latest');
-          req.onsuccess = () => resolve(req.result || null);
-          req.onerror = () => resolve(null);
-        });
-      })
-      .catch(() => null);
-  }
-
   // =========================================================================
-  // PURE CABO SCORING & CUMULATIVE ENGINE
+  // CABO RECHEN- & KAMIKAZE-ENGINE
   // =========================================================================
 
   /**
-   * Computes the round deltas and badge metadata for a single round given raw inputs
-   * and current rule settings.
+   * Berechnet das Ergebnis einer einzelnen Runde anhand der Eingaben.
    */
-  function evaluateSingleRound(roundInput, players, config) {
+  function evaluateRound(roundInput, players, threshold) {
+    const kamikazeBonus = Number(threshold) === 50 ? 25 : 50;
     const playerIds = players.map((p) => p.id);
     const caboCallerId = roundInput.caboCallerId;
+    const kamikazeHolderId = roundInput.kamikazeHolderId;
     const rawScores = roundInput.rawScores || {};
-    const moonFlags = roundInput.moonFlags || {};
 
-    // Check if anyone triggered "12-12-13-13" (Shooting the Moon)
-    const moonHolders = playerIds.filter((pid) => Boolean(moonFlags[pid]));
+    const results = {};
 
-    const roundResults = {};
-    // Each entry: { raw: number, delta: number, status: 'normal'|'cabo_success'|'cabo_fail'|'moon_winner'|'moon_victim', note: string }
-
-    if (moonHolders.length > 0 && config.moonMode === 'others_plus_50') {
-      // Official Cabo 12-12-13-13 rule: holder scores 0, all other players get +50
+    // Fall 1: 12-13er-Regel (Kamikaze) wurde aktiviert
+    if (kamikazeHolderId && playerIds.includes(kamikazeHolderId)) {
       playerIds.forEach((pid) => {
-        const raw = sanitizeNumber(rawScores[pid], 0);
-        if (moonFlags[pid]) {
-          roundResults[pid] = {
+        const raw = toInt(rawScores[pid], 0);
+        if (pid === kamikazeHolderId) {
+          results[pid] = {
             raw,
             delta: 0,
-            status: 'moon_winner',
-            note: '12-12-13-13! (0 pts)'
+            status: 'kamikaze_winner',
+            label: '🦄 12-13er! (0 Pkt.)'
           };
         } else {
-          roundResults[pid] = {
+          results[pid] = {
             raw,
-            delta: 50,
-            status: 'moon_victim',
-            note: '+50 (Opponent 12-12-13-13)'
+            delta: kamikazeBonus,
+            status: 'kamikaze_victim',
+            label: `+${kamikazeBonus} (Kamikaze)`
           };
         }
       });
 
       return {
-        results: roundResults,
+        results,
         caboSucceeded: null,
-        hasMoonEvent: true,
-        minRawScore: 0
+        isKamikazeRound: true,
+        minRaw: 0
       };
     }
 
-    // Find minimum raw score across all players
+    // Fall 2: Normale Runde mit Cabo-Ruf-Prüfung
     let minRaw = Infinity;
     playerIds.forEach((pid) => {
-      const r = sanitizeNumber(rawScores[pid], 0);
+      const r = toInt(rawScores[pid], 0);
       if (r < minRaw) minRaw = r;
     });
     if (!isFinite(minRaw)) minRaw = 0;
 
-    let caboSucceeded = null;
-    if (caboCallerId && caboCallerId !== 'none' && playerIds.includes(caboCallerId)) {
-      const callerRaw = sanitizeNumber(rawScores[caboCallerId], 0);
+    let caboSucceeded = false;
+    if (caboCallerId && playerIds.includes(caboCallerId)) {
+      const callerRaw = toInt(rawScores[caboCallerId], 0);
       caboSucceeded = callerRaw <= minRaw;
     }
 
     playerIds.forEach((pid) => {
-      const raw = sanitizeNumber(rawScores[pid], 0);
-      const hasMoonMinus50 = Boolean(moonFlags[pid]) && config.moonMode === 'minus_50';
-
-      if (hasMoonMinus50) {
-        roundResults[pid] = {
-          raw,
-          delta: -50,
-          status: 'moon_winner',
-          note: '12-12-13-13 (-50 pts)'
-        };
-        return;
-      }
-
+      const raw = toInt(rawScores[pid], 0);
       if (pid === caboCallerId) {
         if (caboSucceeded) {
-          roundResults[pid] = {
+          results[pid] = {
             raw,
             delta: 0,
             status: 'cabo_success',
-            note: 'CABO ✓ (0 pts)'
+            label: '📣 Cabo ✓ (0 Pkt.)'
           };
         } else {
-          const penaltyDelta = config.penaltyMode === 'flat_10' ? 10 : raw + 10;
-          roundResults[pid] = {
+          const penaltyPts = raw + 5;
+          results[pid] = {
             raw,
-            delta: penaltyDelta,
+            delta: penaltyPts,
             status: 'cabo_fail',
-            note: config.penaltyMode === 'flat_10' ? 'CABO ✗ (+10)' : `CABO ✗ (${raw}+10)`
+            label: `📣 Cabo ✗ (${raw}+5 = +${penaltyPts})`
           };
         }
       } else {
-        roundResults[pid] = {
+        results[pid] = {
           raw,
           delta: raw,
           status: 'normal',
-          note: ''
+          label: `+${raw} Pkt.`
         };
       }
     });
 
     return {
-      results: roundResults,
+      results,
       caboSucceeded,
-      hasMoonEvent: moonHolders.length > 0,
-      minRawScore: minRaw
+      isKamikazeRound: false,
+      minRaw
     };
   }
 
   /**
-   * Computes the entire game timeline across all rounds, including running cumulative totals,
-   * Kamikaze exact-threshold resets (100 -> 50 or 50 -> 25 once per player),
-   * warning thresholds, and game-over winner determination.
+   * Berechnet den gesamten Spielverlauf über alle abgeschlossenen Runden
+   * inklusive der einmaligen Rückstufung bei exakter Punktlandung (100 -> 50 bzw. 50 -> 25).
    */
-  function computeGameTimeline(currentState) {
+  function computeGameSummary(currentState) {
     const players = currentState.players;
     const threshold = Number(currentState.threshold) || 100;
-    const resetTarget = Math.floor(threshold / 2); // 50 for Standard 100, 25 for Speed 50
-    const warnThreshold = threshold === 100 ? 80 : 38;
+    const halfThreshold = Math.floor(threshold / 2); // 50 oder 25
+    const warnLimit = threshold === 100 ? 80 : 38;
 
-    const runningTotals = {};
-    const kamikazeUsed = {};
+    const totals = {};
+    const exactResetUsed = {};
     players.forEach((p) => {
-      runningTotals[p.id] = 0;
-      kamikazeUsed[p.id] = false;
+      totals[p.id] = 0;
+      exactResetUsed[p.id] = false;
     });
 
-    const computedRounds = currentState.rounds.map((round, idx) => {
-      const evalResult = evaluateSingleRound(round, players, {
-        penaltyMode: currentState.penaltyMode,
-        moonMode: currentState.moonMode
-      });
+    const historyRows = currentState.rounds.map((rnd, idx) => {
+      const evalRes = evaluateRound(rnd, players, threshold);
+      const perPlayer = {};
 
-      const cells = {};
       players.forEach((p) => {
         const pid = p.id;
-        const rInfo = evalResult.results[pid];
-        let newTotal = runningTotals[pid] + rInfo.delta;
-        let triggeredKamikaze = false;
+        const rInfo = evalRes.results[pid];
+        let newTotal = totals[pid] + rInfo.delta;
+        let hitExactReset = false;
 
-        if (
-          currentState.exactResetEnabled &&
-          !kamikazeUsed[pid] &&
-          newTotal === threshold &&
-          rInfo.delta > 0
-        ) {
-          newTotal = resetTarget;
-          kamikazeUsed[pid] = true;
-          triggeredKamikaze = true;
+        // Exakte Punktlandung auf 100 (bzw. 50) -> einmalig zurück auf 50 (bzw. 25)
+        if (!exactResetUsed[pid] && newTotal === threshold && rInfo.delta > 0) {
+          newTotal = halfThreshold;
+          exactResetUsed[pid] = true;
+          hitExactReset = true;
         }
 
-        runningTotals[pid] = newTotal;
-
-        cells[pid] = {
-          raw: rInfo.raw,
+        totals[pid] = newTotal;
+        perPlayer[pid] = {
           delta: rInfo.delta,
           status: rInfo.status,
-          note: rInfo.note,
-          runningTotal: newTotal,
-          triggeredKamikaze
+          totalAfter: newTotal,
+          hitExactReset
         };
       });
 
       return {
-        roundIndex: idx,
         roundNumber: idx + 1,
-        caboCallerId: round.caboCallerId,
-        caboSucceeded: evalResult.caboSucceeded,
-        cells
+        perPlayer
       };
     });
 
-    // Determine standings, leader(s), and whether threshold is reached/exceeded
+    // Prüfen, ob das Limit erreicht oder überschritten wurde
     let minTotal = Infinity;
-    let maxTotal = -Infinity;
     let isGameOver = false;
 
     players.forEach((p) => {
-      const tot = runningTotals[p.id];
-      if (tot < minTotal) minTotal = tot;
-      if (tot > maxTotal) maxTotal = tot;
-      if (tot >= threshold) {
-        isGameOver = true;
-      }
+      const t = totals[p.id];
+      if (t < minTotal) minTotal = t;
+      if (t >= threshold) isGameOver = true;
     });
-
     if (!isFinite(minTotal)) minTotal = 0;
 
-    // Sort players by total ascending (lowest score wins in Cabo)
-    const rankedPlayers = [...players]
-      .map((p) => {
-        const total = runningTotals[p.id];
-        return {
-          ...p,
-          total,
-          isLeader: currentState.rounds.length > 0 && total === minTotal,
-          isWarning: total >= warnThreshold && total < threshold,
-          isOverLimit: total >= threshold,
-          remainingToLimit: Math.max(0, threshold - total),
-          progressPct: Math.min(100, Math.max(0, Math.round((total / threshold) * 100)))
-        };
-      })
+    const standings = [...players]
+      .map((p) => ({
+        ...p,
+        total: totals[p.id],
+        isLeader: currentState.rounds.length > 0 && totals[p.id] === minTotal,
+        isNearLimit: totals[p.id] >= warnLimit && totals[p.id] < threshold,
+        isOverLimit: totals[p.id] >= threshold,
+        exactResetUsed: exactResetUsed[p.id]
+      }))
       .sort((a, b) => a.total - b.total);
 
-    const winners = rankedPlayers.filter((p) => p.total === minTotal);
-
-    // Current dealer index rotates automatically each round
-    const activeDealerIndex =
-      (currentState.initialDealerIndex + currentState.rounds.length + (currentState.dealerOffset || 0)) %
-      Math.max(1, players.length);
+    const winners = standings.filter((p) => p.total === minTotal);
+    const dealerIndex = (currentState.rounds.length + (currentState.dealerOffset || 0)) % Math.max(1, players.length);
 
     return {
-      computedRounds,
-      runningTotals,
-      rankedPlayers,
+      threshold,
+      halfThreshold,
+      totals,
+      exactResetUsed,
+      historyRows,
+      standings,
       winners,
       minTotal,
       isGameOver,
-      threshold,
-      warnThreshold,
-      activeDealerIndex,
-      activeDealer: players[activeDealerIndex] || players[0]
+      dealer: players[dealerIndex] || players[0]
     };
   }
 
   // =========================================================================
-  // DOM REFERENCES & UI RENDERING
+  // EWIGE STATISTIK LOGIK
+  // =========================================================================
+
+  function recordMatchInStatistics(summary) {
+    if (state.matchRecordedInStats || !summary.isGameOver) return;
+
+    const winnerIds = new Set(summary.winners.map((w) => w.id));
+
+    state.players.forEach((p) => {
+      const cleanName = p.name.trim();
+      const key = cleanName.toLowerCase();
+      if (!stats.players[key]) {
+        stats.players[key] = {
+          displayName: cleanName,
+          wins: 0,
+          gamesPlayed: 0
+        };
+      }
+      stats.players[key].displayName = cleanName;
+      stats.players[key].gamesPlayed += 1;
+      if (winnerIds.has(p.id)) {
+        stats.players[key].wins += 1;
+      }
+    });
+
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    stats.recentMatches.unshift({
+      id: 'm_' + Date.now(),
+      dateStr,
+      winnerNames: summary.winners.map((w) => w.name).join(' & '),
+      winningScore: summary.minTotal,
+      mode: summary.threshold === 50 ? 'Speed (50)' : 'Standard (100)',
+      roundsCount: state.rounds.length
+    });
+
+    if (stats.recentMatches.length > 15) {
+      stats.recentMatches.pop();
+    }
+
+    state.matchRecordedInStats = true;
+    saveState();
+    saveStats();
+  }
+
+  /**
+   * Falls die letzte Runde (die das Spiel beendet hat) per "Rückgängig" wieder zurückgenommen wird,
+   * korrigieren wir auch den Statistikeintrag sauber zurück.
+   */
+  function revertLastMatchFromStatistics(previousWinners, playersList) {
+    if (!state.matchRecordedInStats) return;
+
+    const winnerIds = new Set(previousWinners.map((w) => w.id));
+    playersList.forEach((p) => {
+      const key = p.name.trim().toLowerCase();
+      const entry = stats.players[key];
+      if (entry) {
+        entry.gamesPlayed = Math.max(0, entry.gamesPlayed - 1);
+        if (winnerIds.has(p.id)) {
+          entry.wins = Math.max(0, entry.wins - 1);
+        }
+        if (entry.gamesPlayed === 0 && entry.wins === 0) {
+          delete stats.players[key];
+        }
+      }
+    });
+
+    stats.recentMatches.shift();
+    state.matchRecordedInStats = false;
+    saveStats();
+  }
+
+  // =========================================================================
+  // DOM-ELEMENTE & UI-RENDERING
   // =========================================================================
 
   const dom = {
     setupView: document.getElementById('setupView'),
     gameView: document.getElementById('gameView'),
-    stickyBottomBar: document.getElementById('stickyBottomBar'),
     headerSubtitle: document.getElementById('headerSubtitle'),
-    btnUndo: document.getElementById('btnUndo'),
-    btnRulesModal: document.getElementById('btnRulesModal'),
-    btnGameMenu: document.getElementById('btnGameMenu'),
-    brandHomeBtn: document.getElementById('brandHomeBtn'),
+    btnUndoRound: document.getElementById('btnUndoRound'),
+    btnOpenMenu: document.getElementById('btnOpenMenu'),
 
-    // Setup elements
-    setupPlayerCountBadge: document.getElementById('setupPlayerCountBadge'),
+    // Setup
+    playerCountPill: document.getElementById('playerCountPill'),
     setupPlayersList: document.getElementById('setupPlayersList'),
     newPlayerInput: document.getElementById('newPlayerInput'),
     btnAddPlayer: document.getElementById('btnAddPlayer'),
-    modeBtn100: document.getElementById('modeBtn100'),
-    modeBtn50: document.getElementById('modeBtn50'),
-    penaltyRuleSelector: document.getElementById('penaltyRuleSelector'),
-    moonRuleSelector: document.getElementById('moonRuleSelector'),
-    toggleExactReset: document.getElementById('toggleExactReset'),
+    modeStandardBtn: document.getElementById('modeStandardBtn'),
+    modeSpeedBtn: document.getElementById('modeSpeedBtn'),
     btnStartGame: document.getElementById('btnStartGame'),
 
-    // Game view elements
-    currentRoundBadge: document.getElementById('currentRoundBadge'),
-    currentLimitBadge: document.getElementById('currentLimitBadge'),
-    activeDealerName: document.getElementById('activeDealerName'),
-    btnRotateDealerManual: document.getElementById('btnRotateDealerManual'),
-    gameOverBanner: document.getElementById('gameOverBanner'),
-    winnerHeadline: document.getElementById('winnerHeadline'),
-    winnerSubtext: document.getElementById('winnerSubtext'),
-    winnerPodiumList: document.getElementById('winnerPodiumList'),
-    btnRematchSamePlayers: document.getElementById('btnRematchSamePlayers'),
-    btnContinueAnyway: document.getElementById('btnContinueAnyway'),
-    standingsCardsRow: document.getElementById('standingsCardsRow'),
-    totalRoundsPlayedBadge: document.getElementById('totalRoundsPlayedBadge'),
-    scoreMatrixTable: document.getElementById('scoreMatrixTable'),
-    matrixThead: document.getElementById('matrixThead'),
-    matrixTbody: document.getElementById('matrixTbody'),
-    matrixTfoot: document.getElementById('matrixTfoot'),
-    matrixEmptyState: document.getElementById('matrixEmptyState'),
-    btnOpenRoundEntry: document.getElementById('btnOpenRoundEntry'),
-    btnOpenRoundEntryText: document.getElementById('btnOpenRoundEntryText'),
+    // Game View
+    roundCounterBadge: document.getElementById('roundCounterBadge'),
+    limitCounterBadge: document.getElementById('limitCounterBadge'),
+    dealerNameDisplay: document.getElementById('dealerNameDisplay'),
+    btnRotateDealer: document.getElementById('btnRotateDealer'),
 
-    // Round Entry Modal
-    roundEntryModal: document.getElementById('roundEntryModal'),
-    roundModalEyebrow: document.getElementById('roundModalEyebrow'),
-    roundModalTitle: document.getElementById('roundModalTitle'),
-    btnDeleteRound: document.getElementById('btnDeleteRound'),
-    btnCloseRoundModal: document.getElementById('btnCloseRoundModal'),
-    btnCancelRoundModal: document.getElementById('btnCancelRoundModal'),
-    callerSelectionGrid: document.getElementById('callerSelectionGrid'),
-    callerStatusHint: document.getElementById('callerStatusHint'),
-    roundPlayersEntryList: document.getElementById('roundPlayersEntryList'),
-    caboValidationBanner: document.getElementById('caboValidationBanner'),
-    btnSaveRound: document.getElementById('btnSaveRound'),
-    btnSaveRoundText: document.getElementById('btnSaveRoundText'),
+    gameOverCard: document.getElementById('gameOverCard'),
+    winnerTitleText: document.getElementById('winnerTitleText'),
+    winnerSubText: document.getElementById('winnerSubText'),
+    winnerStandingsList: document.getElementById('winnerStandingsList'),
+    btnPlayAgainSame: document.getElementById('btnPlayAgainSame'),
+    btnUndoLastFromWinner: document.getElementById('btnUndoLastFromWinner'),
+    btnBackToSetupFromWinner: document.getElementById('btnBackToSetupFromWinner'),
 
-    // Rules Modal
-    rulesModal: document.getElementById('rulesModal'),
-    btnCloseRulesModal: document.getElementById('btnCloseRulesModal'),
+    activeRoundInputContainer: document.getElementById('activeRoundInputContainer'),
+    liveRoundFeedback: document.getElementById('liveRoundFeedback'),
+    playerCardsList: document.getElementById('playerCardsList'),
+    btnCommitRound: document.getElementById('btnCommitRound'),
+    btnCommitRoundText: document.getElementById('btnCommitRoundText'),
 
-    // Game Menu Modal
-    gameMenuModal: document.getElementById('gameMenuModal'),
-    btnCloseGameMenu: document.getElementById('btnCloseGameMenu'),
-    midGameThresholdToggle: document.getElementById('midGameThresholdToggle'),
-    btnMenuRematch: document.getElementById('btnMenuRematch'),
-    btnMenuNewSetup: document.getElementById('btnMenuNewSetup'),
+    historyAccordion: document.getElementById('historyAccordion'),
+    historyCountText: document.getElementById('historyCountText'),
+    historyThead: document.getElementById('historyThead'),
+    historyTbody: document.getElementById('historyTbody'),
 
-    // Toast & Offline Status
-    toastContainer: document.getElementById('toastContainer'),
-    offlineStatusText: document.getElementById('offlineStatusText')
+    // Menu & Stats Modal
+    menuModal: document.getElementById('menuModal'),
+    btnCloseMenu: document.getElementById('btnCloseMenu'),
+    inGameActionsSection: document.getElementById('inGameActionsSection'),
+    btnMenuRestartSame: document.getElementById('btnMenuRestartSame'),
+    btnMenuChangePlayers: document.getElementById('btnMenuChangePlayers'),
+    btnClearStats: document.getElementById('btnClearStats'),
+    leaderboardContainer: document.getElementById('leaderboardContainer'),
+    recentMatchesSection: document.getElementById('recentMatchesSection'),
+    recentMatchesList: document.getElementById('recentMatchesList'),
+
+    toastContainer: document.getElementById('toastContainer')
   };
 
   function renderApp() {
-    updateUndoButtonUI();
-
     if (state.phase === 'setup') {
       dom.setupView.hidden = false;
-      dom.setupView.classList.add('active');
       dom.gameView.hidden = true;
-      dom.stickyBottomBar.hidden = true;
-      dom.btnGameMenu.hidden = true;
-      dom.headerSubtitle.textContent = 'Card Game Scorekeeper';
-      renderSetupView();
+      dom.btnUndoRound.hidden = true;
+      dom.headerSubtitle.textContent = 'Kamikaze-Modus aktiv';
+      renderSetup();
     } else {
       dom.setupView.hidden = true;
-      dom.setupView.classList.remove('active');
       dom.gameView.hidden = false;
-      dom.stickyBottomBar.hidden = false;
-      dom.btnGameMenu.hidden = false;
-      const modeName = state.threshold === 50 ? 'Speed Mode (50 pts)' : 'Standard (100 pts)';
-      dom.headerSubtitle.textContent = `${modeName} • ${state.players.length} Players`;
-      renderGameView();
+      dom.btnUndoRound.hidden = state.rounds.length === 0;
+      const modeLabel = Number(state.threshold) === 50 ? 'Speed-Modus (50 Pkt.)' : 'Standard (100 Pkt.)';
+      dom.headerSubtitle.textContent = `${modeLabel} • Kamikaze aktiv`;
+      renderGame();
     }
   }
 
-  function updateUndoButtonUI() {
-    dom.btnUndo.hidden = undoStack.length === 0;
-  }
-
   // =========================================================================
-  // SETUP VIEW RENDERING & INTERACTIONS
+  // SETUP-SCREEN
   // =========================================================================
 
-  function renderSetupView() {
-    dom.setupPlayerCountBadge.textContent = `${state.players.length} Player${state.players.length === 1 ? '' : 's'}`;
-
-    // Render player rows
+  function renderSetup() {
+    dom.playerCountPill.textContent = `${state.players.length} Spieler`;
     dom.setupPlayersList.innerHTML = '';
-    state.players.forEach((player, idx) => {
-      const isStarter = idx === state.initialDealerIndex;
-      const row = document.createElement('div');
-      row.className = 'player-setup-row';
-      row.setAttribute('role', 'listitem');
 
-      const avatar = document.createElement('div');
-      avatar.className = 'player-avatar-dot';
-      avatar.style.backgroundColor = player.color || PLAYER_COLORS[idx % PLAYER_COLORS.length];
-      avatar.textContent = (player.name || `P${idx + 1}`).trim().charAt(0).toUpperCase();
+    state.players.forEach((player, idx) => {
+      const row = document.createElement('div');
+      row.className = 'setup-player-row';
+
+      const numBadge = document.createElement('span');
+      numBadge.className = 'player-num-circle';
+      numBadge.textContent = String(idx + 1);
 
       const input = document.createElement('input');
       input.type = 'text';
-      input.className = 'player-name-edit-input';
+      input.className = 'setup-name-input';
       input.value = player.name;
-      input.placeholder = `Player ${idx + 1}`;
+      input.placeholder = `Spieler ${idx + 1}`;
       input.maxLength = 18;
-      input.setAttribute('aria-label', `Player ${idx + 1} Name`);
       input.addEventListener('input', (e) => {
         player.name = e.target.value;
-        avatar.textContent = (player.name || `P${idx + 1}`).trim().charAt(0).toUpperCase();
         saveState();
       });
       input.addEventListener('blur', () => {
         if (!player.name.trim()) {
-          player.name = `Player ${idx + 1}`;
+          player.name = `Spieler ${idx + 1}`;
           input.value = player.name;
-          avatar.textContent = player.name.charAt(0).toUpperCase();
           saveState();
         }
-      });
-
-      const dealerBtn = document.createElement('button');
-      dealerBtn.type = 'button';
-      dealerBtn.className = `btn-dealer-select ${isStarter ? 'is-dealer' : ''}`;
-      dealerBtn.innerHTML = isStarter ? '🃏 Dealer R1' : 'Set Dealer';
-      dealerBtn.title = 'Select who deals Round 1';
-      dealerBtn.addEventListener('click', () => {
-        state.initialDealerIndex = idx;
-        saveState();
-        renderSetupView();
       });
 
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
       removeBtn.className = 'btn-remove-player';
       removeBtn.disabled = state.players.length <= 2;
-      removeBtn.title = state.players.length <= 2 ? 'Minimum 2 players required' : `Remove ${player.name}`;
-      removeBtn.setAttribute('aria-label', `Remove ${player.name}`);
-      removeBtn.innerHTML = `
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      `;
+      removeBtn.title = 'Spieler entfernen';
+      removeBtn.textContent = '✕';
       removeBtn.addEventListener('click', () => {
         if (state.players.length <= 2) return;
-        pushUndo();
         state.players.splice(idx, 1);
-        if (state.initialDealerIndex >= state.players.length) {
-          state.initialDealerIndex = 0;
-        }
         saveState();
-        renderSetupView();
+        renderSetup();
       });
 
-      row.appendChild(avatar);
+      row.appendChild(numBadge);
       row.appendChild(input);
-      row.appendChild(dealerBtn);
       row.appendChild(removeBtn);
       dom.setupPlayersList.appendChild(row);
     });
 
-    // Threshold mode buttons
-    const is50 = Number(state.threshold) === 50;
-    dom.modeBtn100.classList.toggle('active', !is50);
-    dom.modeBtn100.setAttribute('aria-checked', String(!is50));
-    dom.modeBtn50.classList.toggle('active', is50);
-    dom.modeBtn50.setAttribute('aria-checked', String(is50));
-
-    // Penalty rule buttons
-    dom.penaltyRuleSelector.querySelectorAll('.seg-btn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.penaltyMode === state.penaltyMode);
-    });
-
-    // Moon rule buttons
-    dom.moonRuleSelector.querySelectorAll('.seg-btn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.moonMode === state.moonMode);
-    });
-
-    // Exact reset checkbox
-    dom.toggleExactReset.checked = Boolean(state.exactResetEnabled);
+    const isSpeed = Number(state.threshold) === 50;
+    dom.modeStandardBtn.classList.toggle('active', !isSpeed);
+    dom.modeSpeedBtn.classList.toggle('active', isSpeed);
   }
 
-  function addNewPlayerFromInput() {
+  function addPlayerFromSetup() {
     if (state.players.length >= 8) {
-      showToast('Maximum 8 players supported');
+      showToast('Maximal 8 Spieler möglich');
       return;
     }
-    const rawName = dom.newPlayerInput.value.trim();
-    const nextIdx = state.players.length + 1;
-    const name = rawName || `Player ${nextIdx}`;
-    const color = PLAYER_COLORS[(nextIdx - 1) % PLAYER_COLORS.length];
-
-    pushUndo();
+    const raw = dom.newPlayerInput.value.trim();
+    const nextNum = state.players.length + 1;
     state.players.push({
-      id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-      name,
-      color
+      id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+      name: raw || `Spieler ${nextNum}`
     });
     dom.newPlayerInput.value = '';
     saveState();
-    renderSetupView();
+    renderSetup();
   }
 
   // =========================================================================
-  // GAME VIEW RENDERING (STANDINGS, WINNER BANNER, ROUND MATRIX)
+  // HAUPTSCREEN (DIREKTE RUNDEN-EINGABE & SPIELSTAND)
   // =========================================================================
 
-  function renderGameView() {
-    const timeline = computeGameTimeline(state);
+  function renderGame() {
+    const summary = computeGameSummary(state);
 
-    // Top status bar
+    // Sicherstellen, dass im aktuellen Entwurf ein gültiger Cabo-Rufer gewählt ist
+    if (
+      !currentDraft.caboCallerId ||
+      !state.players.some((p) => p.id === currentDraft.caboCallerId)
+    ) {
+      currentDraft.caboCallerId = state.players[0].id;
+    }
+
     const nextRoundNum = state.rounds.length + 1;
-    dom.currentRoundBadge.textContent = timeline.isGameOver ? 'FINAL' : String(nextRoundNum);
-    dom.currentLimitBadge.textContent = `${timeline.threshold} pts`;
-    dom.activeDealerName.textContent = timeline.activeDealer ? timeline.activeDealer.name : 'Player 1';
-    dom.totalRoundsPlayedBadge.textContent = `${state.rounds.length} Round${state.rounds.length === 1 ? '' : 's'}`;
+    dom.roundCounterBadge.textContent = summary.isGameOver
+      ? `Spiel beendet (${state.rounds.length} Runden)`
+      : `Runde ${nextRoundNum}`;
+    dom.limitCounterBadge.textContent = `Limit: ${summary.threshold} Pkt.`;
+    dom.dealerNameDisplay.textContent = summary.dealer ? summary.dealer.name : 'Spieler 1';
 
-    // Bottom sticky action button text
-    if (timeline.isGameOver) {
-      dom.btnOpenRoundEntryText.textContent = `Add Extra Round ${nextRoundNum}`;
-    } else {
-      dom.btnOpenRoundEntryText.textContent = `Enter Round ${nextRoundNum} Scores`;
-    }
+    // Falls das Spiel vorbei ist: Statistik einmalig verbuchen & Gewinner-Karte zeigen
+    if (summary.isGameOver) {
+      recordMatchInStatistics(summary);
+      dom.gameOverCard.hidden = false;
+      dom.activeRoundInputContainer.hidden = true;
 
-    // Winner Celebration Banner
-    if (timeline.isGameOver && !state.dismissedGameOver) {
-      dom.gameOverBanner.hidden = false;
-      const winnerNames = timeline.winners.map((w) => w.name).join(' & ');
-      dom.winnerHeadline.textContent =
-        timeline.winners.length > 1 ? `Tie! ${winnerNames} Win!` : `${winnerNames} Wins!`;
-      dom.winnerSubtext.textContent = `Lowest cumulative score with ${timeline.minTotal} points (Threshold: ${timeline.threshold} pts)`;
+      const winnerNames = summary.winners.map((w) => w.name).join(' & ');
+      dom.winnerTitleText.textContent =
+        summary.winners.length > 1
+          ? `Unentschieden! ${winnerNames} gewinnen!`
+          : `${winnerNames} gewinnt!`;
+      dom.winnerSubText.textContent = `Niedrigster Gesamtstand mit ${summary.minTotal} Punkten`;
 
-      dom.winnerPodiumList.innerHTML = '';
-      timeline.rankedPlayers.forEach((p, rankIdx) => {
+      dom.winnerStandingsList.innerHTML = '';
+      summary.standings.forEach((p, idx) => {
+        const isFirst = p.total === summary.minTotal;
         const row = document.createElement('div');
-        row.className = `podium-row ${p.total === timeline.minTotal ? 'rank-1' : ''}`;
-        const medal = p.total === timeline.minTotal ? '🏆' : rankIdx === 1 ? '🥈' : rankIdx === 2 ? '🥉' : '•';
-        const statusNote = p.isOverLimit ? ' (Busted Limit)' : '';
+        row.className = `winner-row ${isFirst ? 'is-first' : ''}`;
+        const medal = isFirst ? '🏆' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
         row.innerHTML = `
-          <div class="podium-left">
-            <span>${medal}</span>
-            <span>${escapeHtml(p.name)}<small style="color:var(--text-secondary)">${statusNote}</small></span>
-          </div>
-          <span class="podium-score">${p.total} pts</span>
+          <span>${medal} ${escapeHtml(p.name)}</span>
+          <span>${p.total} Pkt.</span>
         `;
-        dom.winnerPodiumList.appendChild(row);
+        dom.winnerStandingsList.appendChild(row);
       });
     } else {
-      dom.gameOverBanner.hidden = true;
+      dom.gameOverCard.hidden = true;
+      dom.activeRoundInputContainer.hidden = false;
+      dom.btnCommitRoundText.textContent = `Runde ${nextRoundNum} abschließen`;
+      renderPlayerInputCards(summary);
     }
 
-    // Render Live Player Standings Cards
-    dom.standingsCardsRow.innerHTML = '';
-    state.players.forEach((player, idx) => {
-      const rankedInfo = timeline.rankedPlayers.find((r) => r.id === player.id) || {
-        total: 0,
-        isLeader: false,
-        isWarning: false,
-        isOverLimit: false,
-        remainingToLimit: timeline.threshold,
-        progressPct: 0
-      };
-      const isDealer = idx === timeline.activeDealerIndex;
-
-      const card = document.createElement('div');
-      card.className = [
-        'player-standing-card',
-        rankedInfo.isLeader ? 'is-leader' : '',
-        rankedInfo.isWarning ? 'is-warning' : '',
-        rankedInfo.isOverLimit ? 'is-over-limit' : ''
-      ]
-        .filter(Boolean)
-        .join(' ');
-
-      let badgesHtml = '';
-      if (isDealer) {
-        badgesHtml += `<span class="mini-badge badge-dealer" title="Current Round Dealer">🃏 Dealer</span>`;
-      }
-      if (rankedInfo.isOverLimit) {
-        badgesHtml += `<span class="mini-badge badge-danger">≥${timeline.threshold}!</span>`;
-      } else if (rankedInfo.isWarning) {
-        badgesHtml += `<span class="mini-badge badge-danger">Near Limit</span>`;
-      } else if (rankedInfo.isLeader) {
-        badgesHtml += `<span class="mini-badge badge-leader">★ Leader</span>`;
-      }
-
-      let barColor = player.color || '#A855F7';
-      if (rankedInfo.isOverLimit) barColor = '#F43F5E';
-      else if (rankedInfo.isWarning) barColor = '#F59E0B';
-      else if (rankedInfo.isLeader) barColor = '#10B981';
-
-      const remainingText = rankedInfo.isOverLimit
-        ? `Over by ${rankedInfo.total - timeline.threshold} pts`
-        : `${rankedInfo.remainingToLimit} pts to ${timeline.threshold}`;
-
-      card.innerHTML = `
-        <div class="standing-top-row">
-          <div class="standing-player-identity">
-            <span class="standing-dot" style="background:${player.color}"></span>
-            <span class="standing-name">${escapeHtml(player.name)}</span>
-          </div>
-          <div class="standing-badges">${badgesHtml}</div>
-        </div>
-        <div class="standing-score-row">
-          <span class="standing-total-pts">${rankedInfo.total}</span>
-          <span class="standing-pts-remaining">${remainingText}</span>
-        </div>
-        <div class="threshold-progress-track">
-          <div class="threshold-progress-fill" style="width:${rankedInfo.progressPct}%; background:${barColor}"></div>
-        </div>
-      `;
-
-      dom.standingsCardsRow.appendChild(card);
-    });
-
-    // Render Round-by-Round Score Matrix Table
-    renderScoreMatrix(timeline);
+    renderHistoryAccordion(summary);
   }
 
-  function renderScoreMatrix(timeline) {
-    const hasRounds = timeline.computedRounds.length > 0;
-    dom.matrixEmptyState.hidden = hasRounds;
-    dom.scoreMatrixTable.hidden = !hasRounds;
+  function renderPlayerInputCards(summary) {
+    dom.playerCardsList.innerHTML = '';
+    const liveEval = evaluateRound(currentDraft, state.players, summary.threshold);
 
-    if (!hasRounds) return;
-
-    // 1. Table Header (Columns = Players)
-    let theadHtml = `<tr><th class="col-round-hdr">Rnd</th>`;
-    state.players.forEach((p) => {
-      theadHtml += `
-        <th>
-          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:5px;"></span>
-          ${escapeHtml(p.name)}
-        </th>
-      `;
-    });
-    theadHtml += `</tr>`;
-    dom.matrixThead.innerHTML = theadHtml;
-
-    // 2. Table Body (Rows = Rounds)
-    dom.matrixTbody.innerHTML = '';
-    timeline.computedRounds.forEach((cRound) => {
-      const tr = document.createElement('tr');
-      tr.className = 'matrix-round-row';
-      tr.title = `Tap to edit Round ${cRound.roundNumber}`;
-      tr.addEventListener('click', () => {
-        openRoundEntryModal(cRound.roundIndex);
-      });
-
-      let rowHtml = `
-        <td class="cell-round-num">
-          #${cRound.roundNumber}<span class="round-edit-pencil">✎</span>
-        </td>
-      `;
-
-      state.players.forEach((p) => {
-        const cell = cRound.cells[p.id];
-        let deltaClass = '';
-        let badgeExtra = '';
-
-        if (cell.triggeredKamikaze) {
-          deltaClass = 'delta-kamikaze';
-          badgeExtra = `<span class="cell-tag-mini" style="color:var(--accent-gold-bright)">💥 RESET→${cell.runningTotal}</span>`;
-        } else if (cell.status === 'cabo_success') {
-          deltaClass = 'delta-cabo-success';
-          badgeExtra = `<span class="cell-tag-mini" style="color:var(--accent-green-bright)">📣 CABO ✓</span>`;
-        } else if (cell.status === 'cabo_fail') {
-          deltaClass = 'delta-cabo-fail';
-          badgeExtra = `<span class="cell-tag-mini" style="color:var(--accent-danger-bright)">📣 +10 PEN</span>`;
-        } else if (cell.status === 'moon_winner' || cell.status === 'moon_victim') {
-          deltaClass = 'delta-moon';
-          badgeExtra =
-            cell.status === 'moon_winner'
-              ? `<span class="cell-tag-mini" style="color:var(--accent-purple-bright)">🦄 12-13x2</span>`
-              : `<span class="cell-tag-mini" style="color:var(--accent-purple-bright)">+50 MOON</span>`;
-        }
-
-        const formattedDelta = cell.delta > 0 ? `+${cell.delta}` : String(cell.delta);
-
-        rowHtml += `
-          <td class="matrix-score-cell">
-            <div class="cell-inner">
-              <span class="cell-round-delta ${deltaClass}">${formattedDelta}</span>
-              ${badgeExtra}
-              <span class="cell-running-total">∑ ${cell.runningTotal}</span>
-            </div>
-          </td>
-        `;
-      });
-
-      tr.innerHTML = rowHtml;
-      dom.matrixTbody.appendChild(tr);
-    });
-
-    // 3. Table Footer (Running Cumulative Totals)
-    let tfootHtml = `<tr><td class="tfoot-label">Total</td>`;
-    state.players.forEach((p) => {
-      const total = timeline.runningTotals[p.id];
-      const isLeader = total === timeline.minTotal;
-      const isOver = total >= timeline.threshold;
-      let colorStyle = 'color: var(--text-primary);';
-      if (isOver) colorStyle = 'color: var(--accent-danger-bright);';
-      else if (isLeader) colorStyle = 'color: var(--accent-green-bright);';
-
-      tfootHtml += `<td style="${colorStyle}">${total}</td>`;
-    });
-    tfootHtml += `</tr>`;
-    dom.matrixTfoot.innerHTML = tfootHtml;
-  }
-
-  // =========================================================================
-  // ROUND SCORE ENTRY & EDIT MODAL
-  // =========================================================================
-
-  function openRoundEntryModal(editRoundIndex = null) {
-    const isEditing = editRoundIndex !== null && editRoundIndex >= 0 && editRoundIndex < state.rounds.length;
-    const roundNumber = isEditing ? editRoundIndex + 1 : state.rounds.length + 1;
-
-    if (isEditing) {
-      const existing = state.rounds[editRoundIndex];
-      activeRoundDraft = {
-        isEditing: true,
-        roundIndex: editRoundIndex,
-        roundNumber,
-        caboCallerId: existing.caboCallerId || state.players[0].id,
-        rawScores: Object.assign({}, existing.rawScores),
-        moonFlags: Object.assign({}, existing.moonFlags)
-      };
-    } else {
-      const defaultRaw = {};
-      const defaultMoon = {};
-      state.players.forEach((p) => {
-        defaultRaw[p.id] = 0;
-        defaultMoon[p.id] = false;
-      });
-      activeRoundDraft = {
-        isEditing: false,
-        roundIndex: state.rounds.length,
-        roundNumber,
-        caboCallerId: state.players[0].id,
-        rawScores: defaultRaw,
-        moonFlags: defaultMoon
-      };
-    }
-
-    dom.roundModalEyebrow.textContent = isEditing ? `EDITING HISTORY` : `END OF ROUND`;
-    dom.roundModalTitle.textContent = `Round ${roundNumber} Scoring`;
-    dom.btnSaveRoundText.textContent = isEditing ? `Update Round ${roundNumber}` : `Save Round ${roundNumber}`;
-    dom.btnDeleteRound.hidden = !isEditing;
-
-    renderRoundModalContent();
-    dom.roundEntryModal.hidden = false;
-  }
-
-  function closeRoundEntryModal() {
-    dom.roundEntryModal.hidden = true;
-    activeRoundDraft = null;
-  }
-
-  function renderRoundModalContent() {
-    if (!activeRoundDraft) return;
-
-    // 1. Render Cabo Caller Pills
-    dom.callerSelectionGrid.innerHTML = '';
-    state.players.forEach((player) => {
-      const isSelected = activeRoundDraft.caboCallerId === player.id;
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `caller-pill-btn ${isSelected ? 'active' : ''}`;
-      btn.setAttribute('role', 'radio');
-      btn.setAttribute('aria-checked', String(isSelected));
-      btn.innerHTML = `
-        <span style="width:8px;height:8px;border-radius:50%;background:${player.color};flex-shrink:0;"></span>
-        <span>${escapeHtml(player.name)}</span>
-      `;
-      btn.addEventListener('click', () => {
-        activeRoundDraft.caboCallerId = player.id;
-        renderRoundModalContent();
-      });
-      dom.callerSelectionGrid.appendChild(btn);
-    });
-
-    // Also include "No Caller (Deck Empty)" option
-    const noCallerSelected = activeRoundDraft.caboCallerId === 'none';
-    const noCallerBtn = document.createElement('button');
-    noCallerBtn.type = 'button';
-    noCallerBtn.className = `caller-pill-btn ${noCallerSelected ? 'active' : ''}`;
-    noCallerBtn.innerHTML = `<span>🃏 Deck Empty</span>`;
-    noCallerBtn.title = 'Draw pile ran out before anyone called Cabo';
-    noCallerBtn.addEventListener('click', () => {
-      activeRoundDraft.caboCallerId = 'none';
-      renderRoundModalContent();
-    });
-    dom.callerSelectionGrid.appendChild(noCallerBtn);
-
-    // 2. Evaluate live preview
-    const liveEval = evaluateSingleRound(activeRoundDraft, state.players, {
-      penaltyMode: state.penaltyMode,
-      moonMode: state.moonMode
-    });
-
-    // 3. Render Player Score Cards
-    dom.roundPlayersEntryList.innerHTML = '';
     state.players.forEach((player) => {
       const pid = player.id;
-      const isCaller = activeRoundDraft.caboCallerId === pid;
-      const isMoon = Boolean(activeRoundDraft.moonFlags[pid]);
-      const rawVal = sanitizeNumber(activeRoundDraft.rawScores[pid], 0);
+      const standing = summary.standings.find((s) => s.id === pid) || {
+        total: 0,
+        isLeader: false,
+        isNearLimit: false
+      };
+
+      const isCaller = currentDraft.caboCallerId === pid;
+      const isKamikaze = currentDraft.kamikazeHolderId === pid;
+      const rawVal = toInt(currentDraft.rawScores[pid], 0);
       const pEval = liveEval.results[pid];
 
       const card = document.createElement('div');
       card.className = [
-        'player-entry-card',
+        'player-score-card',
         isCaller ? 'is-cabo-caller' : '',
-        isMoon ? 'is-moon-active' : ''
+        isKamikaze ? 'is-kamikaze-holder' : ''
       ]
         .filter(Boolean)
         .join(' ');
 
-      let calcBadgeClass = '';
-      if (pEval.status === 'cabo_success') calcBadgeClass = 'calc-zero';
-      else if (pEval.status === 'cabo_fail') calcBadgeClass = 'calc-penalty';
-      else if (pEval.status === 'moon_winner' || pEval.status === 'moon_victim') calcBadgeClass = 'calc-moon';
+      let statusBadges = '';
+      if (standing.isLeader) {
+        statusBadges += `<span class="pcard-leader-tag">★ Führt</span>`;
+      }
+      if (standing.isNearLimit) {
+        statusBadges += `<span class="pcard-warn-tag">Nahe Limit!</span>`;
+      }
 
-      const deltaSign = pEval.delta > 0 ? `+${pEval.delta}` : String(pEval.delta);
-      const calcText = pEval.note ? `${pEval.note} → ${deltaSign}` : `Round: ${deltaSign} pts`;
+      let previewClass = '';
+      if (pEval.status === 'cabo_success') previewClass = 'delta-zero';
+      else if (pEval.status === 'cabo_fail') previewClass = 'delta-penalty';
+      else if (pEval.status === 'kamikaze_winner' || pEval.status === 'kamikaze_victim') {
+        previewClass = 'delta-kamikaze';
+      }
+
+      // Prüfen, ob der Spieler mit dieser Runde exakt auf 100/50 landet
+      const projectedRawTotal = standing.total + pEval.delta;
+      const willHitExactReset =
+        !standing.exactResetUsed &&
+        projectedRawTotal === summary.threshold &&
+        pEval.delta > 0;
+
+      const previewText = willHitExactReset
+        ? `🎯 Exakt ${summary.threshold} → ${summary.halfThreshold} Pkt.!`
+        : pEval.label;
 
       card.innerHTML = `
-        <div class="entry-card-top">
-          <div class="entry-player-info">
-            <span class="standing-dot" style="background:${player.color}"></span>
-            <span class="entry-player-name">${escapeHtml(player.name)}</span>
-            ${isCaller ? `<span class="entry-caller-tag">📣 CABO CALLER</span>` : ''}
+        <div class="pcard-header">
+          <div class="pcard-identity">
+            <span class="pcard-name">${escapeHtml(player.name)}</span>
+            ${statusBadges}
           </div>
-          <span class="entry-calc-pill ${calcBadgeClass}" data-calc-pill="${pid}">${calcText}</span>
+          <div class="pcard-total-box">
+            <span class="pcard-total-preview ${previewClass}" data-preview-pill="${pid}">${previewText}</span>
+            <span class="pcard-total-current" title="Aktueller Gesamtstand">${standing.total} <small style="font-size:0.7rem;font-weight:700;color:var(--text-muted)">Pkt.</small></span>
+          </div>
         </div>
 
-        <div class="entry-controls-row">
-          <div class="stepper-group">
-            <button type="button" class="btn-stepper" data-step="-5" aria-label="Decrease by 5">-5</button>
-            <button type="button" class="btn-stepper" data-step="-1" aria-label="Decrease by 1">-1</button>
+        <div class="pcard-controls">
+          <div class="score-stepper-box">
+            <button type="button" class="step-btn" data-step="-1" aria-label="1 Punkt weniger">-1</button>
             <input
               type="number"
               inputmode="numeric"
               min="0"
               max="99"
-              class="raw-score-input"
+              class="round-pts-input"
               value="${rawVal}"
-              aria-label="Raw card sum for ${escapeHtml(player.name)}"
+              aria-label="Kartenpunkte für ${escapeHtml(player.name)}"
             />
-            <button type="button" class="btn-stepper" data-step="1" aria-label="Increase by 1">+1</button>
-            <button type="button" class="btn-stepper" data-step="5" aria-label="Increase by 5">+5</button>
+            <button type="button" class="step-btn" data-step="1" aria-label="1 Punkt mehr">+1</button>
+            <button type="button" class="step-btn" data-step="5" aria-label="5 Punkte mehr">+5</button>
           </div>
-        </div>
 
-        <div class="entry-bottom-modifiers">
-          <div class="quick-chips-row">
-            <button type="button" class="btn-quick-val" data-preset="0">0</button>
-            <button type="button" class="btn-quick-val" data-preset="2">2</button>
-            <button type="button" class="btn-quick-val" data-preset="5">5</button>
-            <button type="button" class="btn-quick-val" data-preset="10">10</button>
-            <button type="button" class="btn-quick-val" data-preset="15">15</button>
+          <div class="modifier-toggles">
+            <button type="button" class="btn-cabo-call ${isCaller ? 'active' : ''}" title="Hat dieser Spieler Cabo gerufen?">
+              <span>📣 Cabo</span>
+            </button>
+            <button type="button" class="btn-1213-toggle ${isKamikaze ? 'active' : ''}" title="12-12-13-13 (Kamikaze) auf der Hand">
+              <span>🦄 12-13er</span>
+            </button>
           </div>
-          <button type="button" class="btn-moon-toggle ${isMoon ? 'active' : ''}" title="Player holds 12-12-13-13 at end of round">
-            <span>🦄 12-12-13-13</span>
-            <span>${isMoon ? 'ON' : 'OFF'}</span>
-          </button>
         </div>
       `;
 
-      // Wire up input & stepper events without losing focus
-      const numInput = card.querySelector('.raw-score-input');
-      numInput.addEventListener('focus', () => numInput.select());
-      numInput.addEventListener('input', (e) => {
-        const val = sanitizeNumber(e.target.value, 0);
-        activeRoundDraft.rawScores[pid] = Math.max(0, Math.min(120, val));
-        updateLiveModalEvaluationOnly();
+      // Events für Eingabefeld & Stepper
+      const inputEl = card.querySelector('.round-pts-input');
+      inputEl.addEventListener('focus', () => inputEl.select());
+      inputEl.addEventListener('input', (e) => {
+        currentDraft.rawScores[pid] = Math.max(0, Math.min(120, toInt(e.target.value, 0)));
+        updateLiveRoundPreviewOnly(summary);
       });
 
-      card.querySelectorAll('.btn-stepper').forEach((stepBtn) => {
-        stepBtn.addEventListener('click', () => {
-          const step = Number(stepBtn.dataset.step);
-          const nextVal = Math.max(0, Math.min(120, sanitizeNumber(activeRoundDraft.rawScores[pid], 0) + step));
-          activeRoundDraft.rawScores[pid] = nextVal;
-          numInput.value = nextVal;
-          updateLiveModalEvaluationOnly();
+      card.querySelectorAll('.step-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const step = Number(btn.dataset.step);
+          const nextVal = Math.max(0, Math.min(120, toInt(currentDraft.rawScores[pid], 0) + step));
+          currentDraft.rawScores[pid] = nextVal;
+          inputEl.value = nextVal;
+          updateLiveRoundPreviewOnly(summary);
         });
       });
 
-      card.querySelectorAll('.btn-quick-val').forEach((presetBtn) => {
-        presetBtn.addEventListener('click', () => {
-          const preset = Number(presetBtn.dataset.preset);
-          activeRoundDraft.rawScores[pid] = preset;
-          numInput.value = preset;
-          updateLiveModalEvaluationOnly();
-        });
+      // Cabo-Rufer Toggle
+      const caboBtn = card.querySelector('.btn-cabo-call');
+      caboBtn.addEventListener('click', () => {
+        currentDraft.caboCallerId = pid;
+        renderPlayerInputCards(summary);
       });
 
-      const moonBtn = card.querySelector('.btn-moon-toggle');
-      moonBtn.addEventListener('click', () => {
-        const nextMoon = !activeRoundDraft.moonFlags[pid];
-        // Usually only 1 player can hold both 12s and both 13s in a single deck
-        if (nextMoon) {
-          state.players.forEach((other) => {
-            activeRoundDraft.moonFlags[other.id] = false;
-          });
-          activeRoundDraft.moonFlags[pid] = true;
-          activeRoundDraft.rawScores[pid] = 50; // 12+12+13+13 = 50 raw card sum
+      // 12-13er (Kamikaze) Toggle
+      const kamikazeBtn = card.querySelector('.btn-1213-toggle');
+      kamikazeBtn.addEventListener('click', () => {
+        if (currentDraft.kamikazeHolderId === pid) {
+          currentDraft.kamikazeHolderId = null;
         } else {
-          activeRoundDraft.moonFlags[pid] = false;
+          currentDraft.kamikazeHolderId = pid;
+          currentDraft.rawScores[pid] = 50; // 12+12+13+13
         }
-        renderRoundModalContent();
+        renderPlayerInputCards(summary);
       });
 
-      dom.roundPlayersEntryList.appendChild(card);
+      dom.playerCardsList.appendChild(card);
     });
 
-    updateValidationBannerUI(liveEval);
+    updateFeedbackStrip(liveEval, summary);
   }
 
   /**
-   * Lightweight update of calculated pills & validation banner during typing so input focus is preserved.
+   * Aktualisiert nur die Vorschau-Badges und die Statuszeile während des Tippens,
+   * damit der Fokus im Zahlenfeld erhalten bleibt.
    */
-  function updateLiveModalEvaluationOnly() {
-    if (!activeRoundDraft) return;
-    const liveEval = evaluateSingleRound(activeRoundDraft, state.players, {
-      penaltyMode: state.penaltyMode,
-      moonMode: state.moonMode
-    });
+  function updateLiveRoundPreviewOnly(summary) {
+    const liveEval = evaluateRound(currentDraft, state.players, summary.threshold);
 
     state.players.forEach((player) => {
       const pid = player.id;
+      const standing = summary.standings.find((s) => s.id === pid) || {
+        total: 0,
+        exactResetUsed: false
+      };
       const pEval = liveEval.results[pid];
-      const pill = dom.roundPlayersEntryList.querySelector(`[data-calc-pill="${pid}"]`);
+      const pill = dom.playerCardsList.querySelector(`[data-preview-pill="${pid}"]`);
       if (!pill) return;
 
-      pill.className = 'entry-calc-pill';
-      if (pEval.status === 'cabo_success') pill.classList.add('calc-zero');
-      else if (pEval.status === 'cabo_fail') pill.classList.add('calc-penalty');
-      else if (pEval.status === 'moon_winner' || pEval.status === 'moon_victim') pill.classList.add('calc-moon');
+      pill.className = 'pcard-total-preview';
+      if (pEval.status === 'cabo_success') pill.classList.add('delta-zero');
+      else if (pEval.status === 'cabo_fail') pill.classList.add('delta-penalty');
+      else if (pEval.status === 'kamikaze_winner' || pEval.status === 'kamikaze_victim') {
+        pill.classList.add('delta-kamikaze');
+      }
 
-      const deltaSign = pEval.delta > 0 ? `+${pEval.delta}` : String(pEval.delta);
-      pill.textContent = pEval.note ? `${pEval.note} → ${deltaSign}` : `Round: ${deltaSign} pts`;
+      const projectedRawTotal = standing.total + pEval.delta;
+      const willHitExactReset =
+        !standing.exactResetUsed &&
+        projectedRawTotal === summary.threshold &&
+        pEval.delta > 0;
+
+      pill.textContent = willHitExactReset
+        ? `🎯 Exakt ${summary.threshold} → ${summary.halfThreshold} Pkt.!`
+        : pEval.label;
     });
 
-    updateValidationBannerUI(liveEval);
+    updateFeedbackStrip(liveEval, summary);
   }
 
-  function updateValidationBannerUI(liveEval) {
-    if (!activeRoundDraft) return;
-    const caller = state.players.find((p) => p.id === activeRoundDraft.caboCallerId);
-
-    if (liveEval.hasMoonEvent) {
-      const moonPlayer = state.players.find((p) => activeRoundDraft.moonFlags[p.id]);
-      dom.caboValidationBanner.className = 'cabo-validation-preview preview-moon';
-      dom.caboValidationBanner.innerHTML = `
-        <span>🦄</span>
-        <div>
-          <strong>"12-12-13-13" Rule Active for ${escapeHtml(moonPlayer ? moonPlayer.name : 'Player')}!</strong><br/>
-          ${
-            state.moonMode === 'others_plus_50'
-              ? `${escapeHtml(moonPlayer ? moonPlayer.name : 'Player')} scores <strong>0 pts</strong> and all other players receive <strong>+50 pts</strong>.`
-              : `${escapeHtml(moonPlayer ? moonPlayer.name : 'Player')} receives a <strong>-50 pts</strong> bonus deduction.`
-          }
-        </div>
-      `;
-      dom.callerStatusHint.textContent = '12-12-13-13 Override';
+  function updateFeedbackStrip(liveEval, summary) {
+    if (liveEval.isKamikazeRound) {
+      const holder = state.players.find((p) => p.id === currentDraft.kamikazeHolderId);
+      const bonus = summary.threshold === 50 ? 25 : 50;
+      dom.liveRoundFeedback.className = 'instruction-strip status-kamikaze';
+      dom.liveRoundFeedback.innerHTML = `🦄 <strong>Kamikaze (12-12-13-13)!</strong> ${escapeHtml(
+        holder ? holder.name : ''
+      )} erhält <strong>0 Punkte</strong>, alle anderen bekommen <strong>+${bonus} Punkte</strong>.`;
       return;
     }
 
-    if (!caller) {
-      dom.caboValidationBanner.className = 'cabo-validation-preview';
-      dom.caboValidationBanner.innerHTML = `
-        <span>🃏</span>
-        <div>
-          <strong>Deck Empty (No Cabo Caller):</strong> All players simply score the raw sum of their cards.
-        </div>
-      `;
-      dom.callerStatusHint.textContent = 'No Caller';
-      return;
-    }
+    const caller = state.players.find((p) => p.id === currentDraft.caboCallerId);
+    if (!caller) return;
 
-    const callerRaw = sanitizeNumber(activeRoundDraft.rawScores[caller.id], 0);
+    const callerRaw = toInt(currentDraft.rawScores[caller.id], 0);
     if (liveEval.caboSucceeded) {
-      dom.caboValidationBanner.className = 'cabo-validation-preview preview-success';
-      dom.caboValidationBanner.innerHTML = `
-        <span>✅</span>
-        <div>
-          <strong>${escapeHtml(caller.name)}'s Cabo Call Succeeded!</strong><br/>
-          Raw card sum (${callerRaw}) is lowest (or tied lowest). ${escapeHtml(caller.name)} scores <strong>0 points</strong> this round!
-        </div>
-      `;
-      dom.callerStatusHint.textContent = 'Call Succeeded (0 pts)';
+      dom.liveRoundFeedback.className = 'instruction-strip status-good';
+      dom.liveRoundFeedback.innerHTML = `✅ <strong>${escapeHtml(
+        caller.name
+      )}</strong> hat mit <strong>${callerRaw}</strong> die niedrigste Summe → <strong>0 Punkte</strong>!`;
     } else {
-      const penResult = liveEval.results[caller.id].delta;
-      dom.caboValidationBanner.className = 'cabo-validation-preview preview-fail';
-      dom.caboValidationBanner.innerHTML = `
-        <span>⚠️</span>
-        <div>
-          <strong>${escapeHtml(caller.name)}'s Cabo Call Failed!</strong><br/>
-          Another player had a strictly lower card sum (${liveEval.minRawScore} vs ${callerRaw}). Penalty applied: <strong>+${penResult} points</strong>!
-        </div>
-      `;
-      dom.callerStatusHint.textContent = `Call Failed (+${penResult} pts)`;
+      const penaltyTotal = callerRaw + 5;
+      dom.liveRoundFeedback.className = 'instruction-strip status-warn';
+      dom.liveRoundFeedback.innerHTML = `⚠️ <strong>${escapeHtml(
+        caller.name
+      )}s</strong> Cabo-Ruf fehlgeschlagen (niedrigste: ${liveEval.minRaw}) → <strong>+${penaltyTotal} Punkte</strong> (${callerRaw} + 5 Strafe).`;
     }
   }
 
-  function saveActiveRoundDraft() {
-    if (!activeRoundDraft) return;
-    pushUndo();
+  function commitCurrentRound() {
+    const preSummary = computeGameSummary(state);
 
-    const roundRecord = {
-      id: 'rnd_' + Date.now(),
-      roundNumber: activeRoundDraft.roundNumber,
-      caboCallerId: activeRoundDraft.caboCallerId,
-      rawScores: Object.assign({}, activeRoundDraft.rawScores),
-      moonFlags: Object.assign({}, activeRoundDraft.moonFlags)
-    };
+    state.rounds.push({
+      id: 'r_' + Date.now(),
+      caboCallerId: currentDraft.caboCallerId,
+      kamikazeHolderId: currentDraft.kamikazeHolderId,
+      rawScores: Object.assign({}, currentDraft.rawScores)
+    });
 
-    if (activeRoundDraft.isEditing) {
-      state.rounds[activeRoundDraft.roundIndex] = roundRecord;
-      showToast(`Updated Round ${activeRoundDraft.roundNumber}`);
+    const postSummary = computeGameSummary(state);
+
+    // Prüfen, ob jemand exakt auf 100 bzw. 50 gelandet ist und zurückgestuft wurde
+    const lastRoundRow = postSummary.historyRows[postSummary.historyRows.length - 1];
+    const resetPlayers = state.players.filter(
+      (p) => lastRoundRow && lastRoundRow.perPlayer[p.id] && lastRoundRow.perPlayer[p.id].hitExactReset
+    );
+
+    if (resetPlayers.length > 0) {
+      const names = resetPlayers.map((p) => p.name).join(', ');
+      showToast(`🎯 Punktlandung! ${names} fällt zurück auf ${postSummary.halfThreshold} Punkte!`);
     } else {
-      state.rounds.push(roundRecord);
-      state.dismissedGameOver = false;
-      showToast(`Saved Round ${activeRoundDraft.roundNumber} • Dealer rotated`);
+      showToast(`Runde ${state.rounds.length} gespeichert`);
     }
 
-    closeRoundEntryModal();
+    resetCurrentDraft();
+    // Standardmäßig den nächsten Spieler als Cabo-Rufer vorselektieren
+    const nextCallerIdx = state.rounds.length % state.players.length;
+    currentDraft.caboCallerId = state.players[nextCallerIdx].id;
+
     saveState();
     renderApp();
   }
 
-  function deleteActiveRound() {
-    if (!activeRoundDraft || !activeRoundDraft.isEditing) return;
-    const rNum = activeRoundDraft.roundNumber;
-    pushUndo();
-    state.rounds.splice(activeRoundDraft.roundIndex, 1);
-    closeRoundEntryModal();
+  function undoLastRound() {
+    if (state.rounds.length === 0) return;
+
+    // Falls das Spiel bereits als beendet in der Statistik gezählt wurde, sauber zurücknehmen
+    const currentSummary = computeGameSummary(state);
+    if (currentSummary.isGameOver && state.matchRecordedInStats) {
+      revertLastMatchFromStatistics(currentSummary.winners, state.players);
+    }
+
+    const removed = state.rounds.pop();
+    if (removed) {
+      currentDraft = {
+        caboCallerId: removed.caboCallerId || state.players[0].id,
+        kamikazeHolderId: removed.kamikazeHolderId || null,
+        rawScores: Object.assign({}, removed.rawScores)
+      };
+    }
+
     saveState();
     renderApp();
-    showToast(`Deleted Round ${rNum}`);
+    showToast('↩️ Letzte Runde zurückgenommen');
+  }
+
+  function renderHistoryAccordion(summary) {
+    const count = summary.historyRows.length;
+    dom.historyAccordion.hidden = count === 0;
+    if (count === 0) return;
+
+    dom.historyCountText.textContent = String(count);
+
+    let theadHtml = `<tr><th>Runde</th>`;
+    state.players.forEach((p) => {
+      theadHtml += `<th>${escapeHtml(p.name)}</th>`;
+    });
+    theadHtml += `</tr>`;
+    dom.historyThead.innerHTML = theadHtml;
+
+    let tbodyHtml = '';
+    summary.historyRows.forEach((row) => {
+      tbodyHtml += `<tr><td><strong>#${row.roundNumber}</strong></td>`;
+      state.players.forEach((p) => {
+        const cell = row.perPlayer[p.id];
+        const deltaStr = cell.delta > 0 ? `+${cell.delta}` : String(cell.delta);
+        const resetBadge = cell.hitExactReset ? ` 🎯→${cell.totalAfter}` : '';
+        tbodyHtml += `<td>${deltaStr} <small style="color:var(--text-muted)">(${cell.totalAfter}${resetBadge})</small></td>`;
+      });
+      tbodyHtml += `</tr>`;
+    });
+    dom.historyTbody.innerHTML = tbodyHtml;
   }
 
   // =========================================================================
-  // HELPERS & EVENT LISTENERS
+  // STATISTIK & MENÜ MODAL
   // =========================================================================
 
-  function sanitizeNumber(val, fallback = 0) {
-    const parsed = parseInt(val, 10);
-    return Number.isNaN(parsed) ? fallback : parsed;
+  function openMenuModal() {
+    dom.inGameActionsSection.hidden = state.phase !== 'playing';
+    renderStatisticsModalContent();
+    dom.menuModal.hidden = false;
+  }
+
+  function closeMenuModal() {
+    dom.menuModal.hidden = true;
+  }
+
+  function renderStatisticsModalContent() {
+    const entries = Object.values(stats.players).sort((a, b) => {
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      return b.gamesPlayed - a.gamesPlayed;
+    });
+
+    dom.leaderboardContainer.innerHTML = '';
+    if (entries.length === 0) {
+      dom.leaderboardContainer.innerHTML = `
+        <div class="empty-stats-msg">
+          Noch keine beendeten Spiele gespeichert. Sobald ein Spiel das Punktelimit erreicht, werden die Siege hier gezählt!
+        </div>
+      `;
+    } else {
+      entries.forEach((item, idx) => {
+        const rankIcon = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
+        const winRate =
+          item.gamesPlayed > 0 ? Math.round((item.wins / item.gamesPlayed) * 100) : 0;
+
+        const row = document.createElement('div');
+        row.className = 'leaderboard-row';
+        row.innerHTML = `
+          <div class="lb-left">
+            <span class="lb-rank">${rankIcon}</span>
+            <div>
+              <div class="lb-name">${escapeHtml(item.displayName)}</div>
+              <div class="lb-games">${item.gamesPlayed} ${
+          item.gamesPlayed === 1 ? 'Spiel' : 'Spiele'
+        } (${winRate}% Siegquote)</div>
+            </div>
+          </div>
+          <span class="lb-wins-badge">${item.wins} ${item.wins === 1 ? 'Sieg' : 'Siege'}</span>
+        `;
+        dom.leaderboardContainer.appendChild(row);
+      });
+    }
+
+    // Letzte Partien
+    dom.recentMatchesList.innerHTML = '';
+    if (!stats.recentMatches || stats.recentMatches.length === 0) {
+      dom.recentMatchesSection.hidden = true;
+    } else {
+      dom.recentMatchesSection.hidden = false;
+      stats.recentMatches.slice(0, 6).forEach((m) => {
+        const div = document.createElement('div');
+        div.className = 'recent-match-item';
+        div.innerHTML = `
+          <div>
+            <strong>🏆 ${escapeHtml(m.winnerNames)}</strong> (${m.winningScore} Pkt.)
+            <div style="font-size:0.72rem;color:var(--text-muted)">${escapeHtml(m.mode)} • ${
+          m.roundsCount
+        } Runden</div>
+          </div>
+          <span style="font-size:0.74rem;color:var(--text-muted)">${escapeHtml(m.dateStr)}</span>
+        `;
+        dom.recentMatchesList.appendChild(div);
+      });
+    }
+  }
+
+  // =========================================================================
+  // EVENTS & HILFSFUNKTIONEN
+  // =========================================================================
+
+  function restartWithSamePlayers() {
+    state.rounds = [];
+    state.matchRecordedInStats = false;
+    state.dealerOffset = ((state.dealerOffset || 0) + 1) % state.players.length;
+    resetCurrentDraft();
+    saveState();
+    closeMenuModal();
+    renderApp();
+    showToast('🔄 Neues Spiel gestartet');
+  }
+
+  function backToSetup() {
+    state.phase = 'setup';
+    state.rounds = [];
+    state.matchRecordedInStats = false;
+    resetCurrentDraft();
+    saveState();
+    closeMenuModal();
+    renderApp();
+  }
+
+  function bindEvents() {
+    dom.btnAddPlayer.addEventListener('click', addPlayerFromSetup);
+    dom.newPlayerInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addPlayerFromSetup();
+      }
+    });
+
+    dom.modeStandardBtn.addEventListener('click', () => {
+      state.threshold = 100;
+      saveState();
+      renderSetup();
+    });
+
+    dom.modeSpeedBtn.addEventListener('click', () => {
+      state.threshold = 50;
+      saveState();
+      renderSetup();
+    });
+
+    dom.btnStartGame.addEventListener('click', () => {
+      state.players.forEach((p, idx) => {
+        p.name = p.name.trim() || `Spieler ${idx + 1}`;
+      });
+      state.phase = 'playing';
+      state.rounds = [];
+      state.matchRecordedInStats = false;
+      resetCurrentDraft();
+      saveState();
+      renderApp();
+    });
+
+    dom.btnRotateDealer.addEventListener('click', () => {
+      state.dealerOffset = ((state.dealerOffset || 0) + 1) % state.players.length;
+      saveState();
+      renderGame();
+    });
+
+    dom.btnCommitRound.addEventListener('click', commitCurrentRound);
+    dom.btnUndoRound.addEventListener('click', undoLastRound);
+    dom.btnUndoLastFromWinner.addEventListener('click', undoLastRound);
+
+    dom.btnPlayAgainSame.addEventListener('click', restartWithSamePlayers);
+    dom.btnBackToSetupFromWinner.addEventListener('click', backToSetup);
+
+    // Menü & Statistik Modal
+    dom.btnOpenMenu.addEventListener('click', openMenuModal);
+    dom.btnCloseMenu.addEventListener('click', closeMenuModal);
+    dom.menuModal.addEventListener('click', (e) => {
+      if (e.target === dom.menuModal) closeMenuModal();
+    });
+
+    dom.btnMenuRestartSame.addEventListener('click', restartWithSamePlayers);
+    dom.btnMenuChangePlayers.addEventListener('click', backToSetup);
+
+    dom.btnClearStats.addEventListener('click', () => {
+      stats = createDefaultStats();
+      saveStats();
+      renderStatisticsModalContent();
+      showToast('Statistik zurückgesetzt');
+    });
+  }
+
+  function toInt(val, fallback = 0) {
+    const n = parseInt(val, 10);
+    return Number.isNaN(n) ? fallback : n;
   }
 
   function escapeHtml(str) {
@@ -1160,220 +1044,28 @@
       .replace(/'/g, '&#039;');
   }
 
-  function showToast(message) {
-    const toast = document.createElement('div');
-    toast.className = 'toast-msg';
-    toast.textContent = message;
-    dom.toastContainer.appendChild(toast);
+  function showToast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast-msg';
+    t.textContent = msg;
+    dom.toastContainer.appendChild(t);
     setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transition = 'opacity 0.25s ease';
-      setTimeout(() => toast.remove(), 260);
-    }, 2400);
+      t.style.opacity = '0';
+      t.style.transition = 'opacity 0.2s ease';
+      setTimeout(() => t.remove(), 220);
+    }, 2200);
   }
 
-  function bindEvents() {
-    // Setup Events
-    dom.btnAddPlayer.addEventListener('click', addNewPlayerFromInput);
-    dom.newPlayerInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        addNewPlayerFromInput();
-      }
-    });
-
-    dom.modeBtn100.addEventListener('click', () => {
-      state.threshold = 100;
-      saveState();
-      renderSetupView();
-    });
-
-    dom.modeBtn50.addEventListener('click', () => {
-      state.threshold = 50;
-      saveState();
-      renderSetupView();
-    });
-
-    dom.penaltyRuleSelector.querySelectorAll('.seg-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        state.penaltyMode = btn.dataset.penaltyMode;
-        saveState();
-        renderSetupView();
-      });
-    });
-
-    dom.moonRuleSelector.querySelectorAll('.seg-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        state.moonMode = btn.dataset.moonMode;
-        saveState();
-        renderSetupView();
-      });
-    });
-
-    dom.toggleExactReset.addEventListener('change', (e) => {
-      state.exactResetEnabled = e.target.checked;
-      saveState();
-    });
-
-    dom.btnStartGame.addEventListener('click', () => {
-      // Ensure all player names are non-empty
-      state.players.forEach((p, idx) => {
-        if (!p.name || !p.name.trim()) {
-          p.name = `Player ${idx + 1}`;
-        } else {
-          p.name = p.name.trim();
-        }
-      });
-      pushUndo();
-      state.phase = 'playing';
-      state.dismissedGameOver = false;
-      saveState();
-      renderApp();
-    });
-
-    // Header Actions
-    dom.btnUndo.addEventListener('click', triggerUndo);
-
-    dom.btnRulesModal.addEventListener('click', () => {
-      dom.rulesModal.hidden = false;
-    });
-    dom.btnCloseRulesModal.addEventListener('click', () => {
-      dom.rulesModal.hidden = true;
-    });
-    dom.rulesModal.addEventListener('click', (e) => {
-      if (e.target === dom.rulesModal) dom.rulesModal.hidden = true;
-    });
-
-    // Game Menu Modal
-    dom.btnGameMenu.addEventListener('click', () => {
-      dom.midGameThresholdToggle.querySelectorAll('.seg-btn').forEach((b) => {
-        b.classList.toggle('active', Number(b.dataset.midThreshold) === Number(state.threshold));
-      });
-      dom.gameMenuModal.hidden = false;
-    });
-    dom.btnCloseGameMenu.addEventListener('click', () => {
-      dom.gameMenuModal.hidden = true;
-    });
-    dom.gameMenuModal.addEventListener('click', (e) => {
-      if (e.target === dom.gameMenuModal) dom.gameMenuModal.hidden = true;
-    });
-
-    dom.midGameThresholdToggle.querySelectorAll('.seg-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        pushUndo();
-        state.threshold = Number(btn.dataset.midThreshold);
-        state.dismissedGameOver = false;
-        saveState();
-        dom.midGameThresholdToggle.querySelectorAll('.seg-btn').forEach((b) => {
-          b.classList.toggle('active', Number(b.dataset.midThreshold) === Number(state.threshold));
-        });
-        renderApp();
-        showToast(`Switched limit to ${state.threshold} pts`);
-      });
-    });
-
-    dom.btnMenuRematch.addEventListener('click', () => {
-      pushUndo();
-      state.rounds = [];
-      state.dismissedGameOver = false;
-      state.initialDealerIndex = (state.initialDealerIndex + 1) % state.players.length;
-      state.dealerOffset = 0;
-      dom.gameMenuModal.hidden = true;
-      saveState();
-      renderApp();
-      showToast('Scores reset for new match!');
-    });
-
-    dom.btnMenuNewSetup.addEventListener('click', () => {
-      pushUndo();
-      state.phase = 'setup';
-      state.rounds = [];
-      state.dismissedGameOver = false;
-      dom.gameMenuModal.hidden = true;
-      saveState();
-      renderApp();
-    });
-
-    // Game View Interactions
-    dom.btnRotateDealerManual.addEventListener('click', () => {
-      state.dealerOffset = ((state.dealerOffset || 0) + 1) % state.players.length;
-      saveState();
-      renderGameView();
-      const timeline = computeGameTimeline(state);
-      showToast(`🃏 Dealer rotated to ${timeline.activeDealer.name}`);
-    });
-
-    dom.btnOpenRoundEntry.addEventListener('click', () => {
-      openRoundEntryModal(null);
-    });
-
-    dom.btnRematchSamePlayers.addEventListener('click', () => {
-      pushUndo();
-      state.rounds = [];
-      state.dismissedGameOver = false;
-      state.initialDealerIndex = (state.initialDealerIndex + 1) % state.players.length;
-      state.dealerOffset = 0;
-      saveState();
-      renderApp();
-      showToast('New match started!');
-    });
-
-    dom.btnContinueAnyway.addEventListener('click', () => {
-      state.dismissedGameOver = true;
-      saveState();
-      renderGameView();
-    });
-
-    // Round Entry Modal Actions
-    dom.btnCloseRoundModal.addEventListener('click', closeRoundEntryModal);
-    dom.btnCancelRoundModal.addEventListener('click', closeRoundEntryModal);
-    dom.roundEntryModal.addEventListener('click', (e) => {
-      if (e.target === dom.roundEntryModal) closeRoundEntryModal();
-    });
-    dom.btnSaveRound.addEventListener('click', saveActiveRoundDraft);
-    dom.btnDeleteRound.addEventListener('click', deleteActiveRound);
-
-    // Offline / Online connectivity status listener
-    function updateConnectivityBadge() {
-      if (navigator.onLine) {
-        dom.offlineStatusText.textContent = 'Offline Ready';
-      } else {
-        dom.offlineStatusText.textContent = 'Offline Mode';
-      }
-    }
-    window.addEventListener('online', updateConnectivityBadge);
-    window.addEventListener('offline', updateConnectivityBadge);
-    updateConnectivityBadge();
-  }
-
-  // =========================================================================
-  // SERVICE WORKER REGISTRATION & INITIALIZATION
-  // =========================================================================
-
-  function registerPWA() {
+  function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('./sw.js', { scope: './' })
-          .catch((err) => {
-            console.warn('Service Worker registration skipped or failed:', err);
-          });
+        navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
       });
     }
   }
 
-  async function init() {
-    const loadedSync = loadStateFromStorage();
-    if (!loadedSync) {
-      const idbData = await loadFromIndexedDBFallback();
-      if (idbData && Array.isArray(idbData.players)) {
-        state = Object.assign(createDefaultState(), idbData);
-      }
-    }
-    bindEvents();
-    renderApp();
-    registerPWA();
-  }
-
-  init();
+  loadData();
+  bindEvents();
+  renderApp();
+  registerServiceWorker();
 })();

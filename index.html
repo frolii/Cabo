@@ -1,241 +1,121 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#121824" />
+  <meta name="theme-color" content="#4D9B36" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Cabo" />
-  <meta name="description" content="Mobile-first, 100% offline-capable PWA Scorekeeper for the card game Cabo." />
-  <title>Cabo Scorekeeper</title>
-  <link rel="manifest" href="./manifest.json" />
-  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <link rel="apple-touch-icon" href="./icon-maskable.svg" />
-  <link rel="stylesheet" href="./styles.css" />
+  <meta name="description" content="Minimalistischer, 100% offline-fähiger Punktezähler für das Kartenspiel Cabo." />
+  <title>Cabo Punktezähler</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="apple-touch-icon" href="/icon-maskable.svg" />
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <!-- Surreal Cabo Ambient Background Motifs -->
-  <div class="ambient-bg" aria-hidden="true">
-    <div class="ambient-orb orb-purple"></div>
-    <div class="ambient-orb orb-teal"></div>
-    <div class="ambient-orb orb-gold"></div>
-    <svg class="watermark-svg wm-unicorn" viewBox="0 0 200 200">
-      <path d="M40,180 C48,120 68,85 88,55 L75,35 C72,30 82,24 92,33 L102,40 C118,34 136,42 148,60 L170,92 C178,104 170,120 156,118 C142,116 132,108 124,102 C120,126 126,155 135,180 Z" fill="currentColor"/>
-      <polygon points="108,42 168,-5 128,55" fill="currentColor"/>
+  <!-- Dezente, freundliche Cabo-Hintergrundmotive (Feder, Einhorn, Schuppen) -->
+  <div class="ambient-nature-bg" aria-hidden="true">
+    <svg class="bg-motif motif-scales" viewBox="0 0 240 120">
+      <path d="M0,30 Q30,65 60,30 Q90,65 120,30 Q150,65 180,30 Q210,65 240,30" fill="none" stroke="currentColor" stroke-width="4"/>
+      <path d="M0,75 Q30,110 60,75 Q90,110 120,75 Q150,110 180,75 Q210,110 240,75" fill="none" stroke="currentColor" stroke-width="4"/>
     </svg>
-    <svg class="watermark-svg wm-spy" viewBox="0 0 200 120">
-      <circle cx="55" cy="45" r="28" fill="none" stroke="currentColor" stroke-width="6"/>
-      <circle cx="145" cy="45" r="28" fill="none" stroke="currentColor" stroke-width="6"/>
-      <path d="M83,45 Q100,35 117,45" fill="none" stroke="currentColor" stroke-width="6"/>
-      <path d="M35,92 C55,75 85,82 100,95 C115,82 145,75 165,92 C148,106 118,105 100,98 C82,105 52,106 35,92 Z" fill="currentColor"/>
+    <svg class="bg-motif motif-feather" viewBox="0 0 120 120">
+      <path d="M20,100 C35,60 65,30 100,15 C100,55 75,85 30,95 Z" fill="currentColor"/>
     </svg>
   </div>
 
   <div class="app-shell">
-    <!-- Top App Bar -->
+    <!-- Top Header -->
     <header class="app-header">
-      <div class="brand-lockup" id="brandHomeBtn" role="button" tabindex="0" title="Cabo Scorekeeper">
-        <div class="cabo-logo-badge">
-          <svg class="logo-unicorn" viewBox="0 0 64 64" aria-hidden="true">
-            <defs>
-              <linearGradient id="miniRainbow" x1="0%" y1="100%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#F43F5E"/>
-                <stop offset="33%" stop-color="#F59E0B"/>
-                <stop offset="66%" stop-color="#10B981"/>
-                <stop offset="100%" stop-color="#A855F7"/>
-              </linearGradient>
-            </defs>
-            <rect x="4" y="4" width="56" height="56" rx="14" fill="#1E293B" stroke="url(#miniRainbow)" stroke-width="3"/>
-            <path d="M18,56 C20,42 25,33 30,25 L26,19 C25,17 28,15 31,18 L34,20 C38,18 43,21 47,26 L53,35 C55,38 53,43 49,42 C45,41 42,39 40,37 C38,44 40,50 42,56 Z" fill="#F8FAFC"/>
-            <polygon points="36,20 54,6 41,25" fill="#FDE047"/>
-            <text x="12" y="20" font-size="12" font-weight="900" fill="#FDE047">0</text>
-          </svg>
+      <div class="brand-lockup" id="brandLogoBtn">
+        <div class="cabo-box-badge" aria-hidden="true">
+          <span>CABO</span>
         </div>
-        <div class="brand-titles">
-          <div class="brand-title-row">
-            <h1 class="brand-name">CABO</h1>
-            <span class="offline-pill" id="offlineStatusBadge" title="Saved locally &amp; works 100% offline">
-              <span class="status-dot"></span>
-              <span id="offlineStatusText">Offline Ready</span>
-            </span>
-          </div>
-          <p class="brand-subtitle" id="headerSubtitle">Card Game Scorekeeper</p>
+        <div class="brand-text">
+          <h1 class="app-title">Punktezähler</h1>
+          <p class="app-subtitle" id="headerSubtitle">Kamikaze-Modus aktiv</p>
         </div>
       </div>
 
       <div class="header-actions">
-        <button type="button" class="icon-btn" id="btnUndo" title="Undo last change" aria-label="Undo last change" hidden>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <!-- 1-Tap Undo für die letzte Runde -->
+        <button type="button" class="icon-btn" id="btnUndoRound" title="Letzte Runde rückgängig machen" aria-label="Letzte Runde rückgängig machen" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 7v6h6"/>
             <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
           </svg>
         </button>
-        <button type="button" class="icon-btn" id="btnRulesModal" title="Cabo Card Reference &amp; Rules" aria-label="Cabo Card Reference and Rules">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-            <line x1="12" y1="17" x2="12.01" y2="17"/>
+
+        <!-- Verschachteltes Menü: Statistik & Spiel-Optionen -->
+        <button type="button" class="menu-pill-btn" id="btnOpenMenu" aria-label="Menü und Statistik öffnen">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 20V10"/>
+            <path d="M12 20V4"/>
+            <path d="M6 20v-6"/>
           </svg>
-        </button>
-        <button type="button" class="icon-btn" id="btnGameMenu" title="Game Options / New Game" aria-label="Game Options" hidden>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 20h9"/>
-            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-          </svg>
+          <span>Menü &amp; Siege</span>
         </button>
       </div>
     </header>
 
-    <!-- MAIN CONTENT -->
     <main class="app-main">
-      <!-- ==================== VIEW 1: SETUP PHASE ==================== -->
-      <section id="setupView" class="view-section active" aria-labelledby="setupHeading">
-        <!-- Hero Motif Card Banner -->
-        <div class="cabo-motif-banner">
-          <div class="motif-card mc-0" title="0 - Unicorn">
-            <span class="mc-num">0</span>
-            <svg viewBox="0 0 40 40" class="mc-svg"><polygon points="22,12 34,2 26,17" fill="#FDE047"/><path d="M10,38 C12,26 16,20 20,14 L17,10 C19,8 22,11 24,12 C28,11 31,14 33,18 L36,24 C37,26 35,29 32,28 C29,27 27,25 25,24 C24,29 25,34 27,38 Z" fill="#F8FAFC"/></svg>
-            <span class="mc-label">Unicorn</span>
-          </div>
-          <div class="motif-card mc-1" title="1 - Feather">
-            <span class="mc-num">1</span>
-            <svg viewBox="0 0 40 40" class="mc-svg"><path d="M10,34 C14,22 22,12 32,6 C32,18 24,28 12,32 Z" fill="#FB923C"/><path d="M10,34 L30,8" stroke="#7C2D12" stroke-width="2" stroke-linecap="round"/><circle cx="19" cy="18" r="2.2" fill="#EF4444"/></svg>
-            <span class="mc-label">Feather</span>
-          </div>
-          <div class="motif-card mc-3" title="3 - Asparagus">
-            <span class="mc-num">3</span>
-            <svg viewBox="0 0 40 40" class="mc-svg"><path d="M13,36 L13,14 C13,9 16,9 16,14 L16,36 Z M20,36 L20,18 C20,13 23,13 23,18 L23,36 Z M27,36 L27,12 C27,7 30,7 30,12 L30,36 Z" fill="#4ADE80"/></svg>
-            <span class="mc-label">Asparagus</span>
-          </div>
-          <div class="motif-card mc-9" title="9/10 - Spy Glasses">
-            <span class="mc-num">9</span>
-            <svg viewBox="0 0 40 40" class="mc-svg"><circle cx="13" cy="16" r="5.5" fill="none" stroke="#F472B6" stroke-width="2.2"/><circle cx="27" cy="16" r="5.5" fill="none" stroke="#38BDF8" stroke-width="2.2"/><path d="M18.5,16 L21.5,16" stroke="#CBD5E1" stroke-width="2"/><path d="M9,28 C13,24 18,26 20,29 C22,26 27,24 31,28 C27,31 22,31 20,29 C18,31 13,31 9,28 Z" fill="#C084FC"/></svg>
-            <span class="mc-label">Spy</span>
-          </div>
-          <div class="motif-card mc-12" title="12 - Geometric Swap">
-            <span class="mc-num">12</span>
-            <svg viewBox="0 0 40 40" class="mc-svg"><polygon points="20,6 32,16 20,22" fill="#F43F5E"/><polygon points="20,6 8,16 20,22" fill="#F59E0B"/><polygon points="8,16 14,32 20,22" fill="#A855F7"/><polygon points="32,16 26,32 20,22" fill="#38BDF8"/><polygon points="14,32 26,32 20,22" fill="#10B981"/></svg>
-            <span class="mc-label">Swap</span>
-          </div>
-          <div class="motif-card mc-13" title="13 - Rainbow Glue">
-            <span class="mc-num">13</span>
-            <svg viewBox="0 0 40 40" class="mc-svg"><rect x="13" y="16" width="14" height="18" rx="4" fill="#F8FAFC"/><rect x="16" y="12" width="8" height="4" rx="1" fill="#FDE047"/><polygon points="18,12 20,6 22,12" fill="#F97316"/><path d="M16,28 A4,4 0 0,1 24,28" fill="none" stroke="#A855F7" stroke-width="2"/></svg>
-            <span class="mc-label">Glue</span>
-          </div>
-        </div>
-
-        <div class="surface-card setup-card">
-          <div class="card-section-header">
+      <!-- ==================== ANSICHT 1: MINIMALES SETUP ==================== -->
+      <section id="setupView" class="view-section">
+        <div class="white-card">
+          <div class="section-head">
             <div>
-              <h2 id="setupHeading" class="section-title">Game Setup</h2>
-              <p class="section-desc">Add 2–6 players and select your target point threshold.</p>
+              <h2 class="section-title">Spieler</h2>
+              <p class="section-sub">Wer spielt mit? (2 bis 8 Spieler)</p>
             </div>
-            <span class="player-count-pill" id="setupPlayerCountBadge">3 Players</span>
+            <span class="badge-green" id="playerCountPill">3 Spieler</span>
           </div>
 
-          <!-- Players List -->
-          <div class="players-setup-list" id="setupPlayersList" role="list">
-            <!-- Dynamically rendered player rows -->
+          <div class="setup-players-list" id="setupPlayersList">
+            <!-- Dynamische Spielerzeilen -->
           </div>
 
-          <!-- Add Player Input Row -->
-          <div class="add-player-bar">
+          <div class="add-player-row">
             <input
               type="text"
               id="newPlayerInput"
-              class="text-input"
-              placeholder="Add another player (e.g., Luna)..."
+              class="input-clean"
+              placeholder="Spielername hinzufügen..."
               maxlength="18"
               autocomplete="off"
             />
-            <button type="button" class="btn btn-secondary" id="btnAddPlayer">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              <span>Add</span>
+            <button type="button" class="btn btn-soft-green" id="btnAddPlayer">
+              + Hinzufügen
             </button>
           </div>
-          <p class="helper-hint">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            Tap the <strong>Dealer / Starter badge</strong> next to a player to choose who deals Round 1. It rotates automatically every round!
-          </p>
         </div>
 
-        <!-- Game Mode / Threshold Selector -->
-        <div class="surface-card setup-card">
-          <h2 class="section-title">Game Mode &amp; Threshold</h2>
-          <p class="section-desc">The game ends as soon as any player reaches or exceeds the threshold. Lowest total score wins!</p>
+        <div class="white-card">
+          <div class="section-head">
+            <div>
+              <h2 class="section-title">Spielmodus</h2>
+              <p class="section-sub">Bei welchem Punktelimit endet das Spiel?</p>
+            </div>
+            <span class="badge-kamikaze" title="Kamikaze-Modus ist dauerhaft aktiv">🦄 Kamikaze aktiv</span>
+          </div>
 
-          <div class="mode-selector-grid" role="radiogroup" aria-label="Game Threshold Mode">
-            <button type="button" class="mode-option-card active" data-threshold="100" id="modeBtn100" role="radio" aria-checked="true">
-              <div class="mode-card-top">
-                <span class="mode-badge mode-standard">Standard</span>
-                <span class="mode-points">100 <small>pts</small></span>
-              </div>
-              <div class="mode-card-title">Classic Cabo</div>
-              <p class="mode-card-desc">Official rules threshold. Exactly 100 pts triggers the Kamikaze reset to 50 pts!</p>
+          <div class="mode-grid" role="radiogroup" aria-label="Spielmodus">
+            <button type="button" class="mode-card active" id="modeStandardBtn" data-threshold="100">
+              <span class="mode-tag">Standard</span>
+              <strong class="mode-pts">100 Punkte</strong>
+              <span class="mode-hint">Exakt 100 → 50 Pkt. | 12-13er → +50 Pkt.</span>
             </button>
 
-            <button type="button" class="mode-option-card" data-threshold="50" id="modeBtn50" role="radio" aria-checked="false">
-              <div class="mode-card-top">
-                <span class="mode-badge mode-speed">Speed Mode</span>
-                <span class="mode-points">50 <small>pts</small></span>
-              </div>
-              <div class="mode-card-title">Quick Match</div>
-              <p class="mode-card-desc">Fast-paced pub &amp; travel mode. High stakes on every single round!</p>
+            <button type="button" class="mode-card" id="modeSpeedBtn" data-threshold="50">
+              <span class="mode-tag">Speed-Modus</span>
+              <strong class="mode-pts">50 Punkte</strong>
+              <span class="mode-hint">Exakt 50 → 25 Pkt. | 12-13er → +25 Pkt.</span>
             </button>
           </div>
 
-          <!-- Advanced Official Rules Toggles -->
-          <div class="rules-config-box">
-            <div class="rule-toggle-row">
-              <div class="rule-toggle-info">
-                <span class="rule-toggle-title">
-                  Failed Cabo Penalty Mode
-                </span>
-                <span class="rule-toggle-sub">When the Cabo caller doesn't have the lowest score:</span>
-              </div>
-              <div class="segmented-control" id="penaltyRuleSelector">
-                <button type="button" class="seg-btn active" data-penalty-mode="sum_plus_10" title="Official rule: Hand sum + 10 penalty points">
-                  Card Sum + 10
-                </button>
-                <button type="button" class="seg-btn" data-penalty-mode="flat_10" title="Variant: Flat +10 penalty points">
-                  Flat +10 Only
-                </button>
-              </div>
-            </div>
-
-            <div class="rule-toggle-row">
-              <div class="rule-toggle-info">
-                <span class="rule-toggle-title">
-                  "12-12-13-13" Shooting the Moon Rule
-                </span>
-                <span class="rule-toggle-sub">Holding both 12s &amp; both 13s at round end:</span>
-              </div>
-              <div class="segmented-control" id="moonRuleSelector">
-                <button type="button" class="seg-btn active" data-moon-mode="others_plus_50" title="Official rule: Caller scores 0, all other players get +50 pts">
-                  0 / Others +50
-                </button>
-                <button type="button" class="seg-btn" data-moon-mode="minus_50" title="House variant: Player deducts -50 pts from their score">
-                  Player -50 pts
-                </button>
-              </div>
-            </div>
-
-            <label class="checkbox-row" for="toggleExactReset">
-              <input type="checkbox" id="toggleExactReset" checked />
-              <span class="custom-check"></span>
-              <span class="checkbox-text">
-                <strong>Exact Threshold Reset ("Kamikaze" Rule)</strong>
-                <small>Landing on <em>exactly</em> 100 pts (or 50 in Speed Mode) resets that player's total to 50 (or 25) once per game.</small>
-              </span>
-            </label>
-          </div>
-
-          <button type="button" class="btn btn-primary btn-lg btn-start-game" id="btnStartGame">
-            <span>Start Cabo Match</span>
+          <button type="button" class="btn btn-primary btn-xl" id="btnStartGame">
+            <span>Spiel starten</span>
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <line x1="5" y1="12" x2="19" y2="12"/>
               <polyline points="12 5 19 12 12 19"/>
@@ -244,302 +124,157 @@
         </div>
       </section>
 
-      <!-- ==================== VIEW 2: ACTIVE GAME / SCOREBOARD ==================== -->
-      <section id="gameView" class="view-section" aria-labelledby="scoreboardHeading" hidden>
-        <!-- Game Status & Dealer Bar -->
-        <div class="game-status-strip">
-          <div class="status-pill-group">
-            <div class="status-chip chip-round">
-              <span class="chip-label">ROUND</span>
-              <strong class="chip-val" id="currentRoundBadge">1</strong>
-            </div>
-            <div class="status-chip chip-limit" id="thresholdChipBadge" title="Game ends when a player hits this score">
-              <span class="chip-label">LIMIT</span>
-              <strong class="chip-val" id="currentLimitBadge">100 pts</strong>
-            </div>
+      <!-- ==================== ANSICHT 2: HAUPTSCREEN (ULTRA-LEAN SCORE INPUT) ==================== -->
+      <section id="gameView" class="view-section" hidden>
+        <!-- Kompakte Statusleiste oben -->
+        <div class="round-status-bar">
+          <div class="round-badge-group">
+            <span class="round-pill" id="roundCounterBadge">Runde 1</span>
+            <span class="limit-pill" id="limitCounterBadge">Limit: 100 Pkt.</span>
+          </div>
+          <button type="button" class="dealer-pill" id="btnRotateDealer" title="Tippen, um den Geber weiterzudrehen">
+            <span>🃏 Geber:</span>
+            <strong id="dealerNameDisplay">Spieler 1</strong>
+          </button>
+        </div>
+
+        <!-- Spielende / Gewinner-Karte (erscheint automatisch bei Erreichen des Limits) -->
+        <div id="gameOverCard" class="winner-card" hidden>
+          <div class="winner-confetti" aria-hidden="true">🦄 🏆 🌈</div>
+          <span class="winner-eyebrow">SPIELENDE • LIMIT ERREICHT</span>
+          <h2 class="winner-title" id="winnerTitleText">Spieler 1 gewinnt!</h2>
+          <p class="winner-sub" id="winnerSubText">Niedrigste Punktzahl mit 22 Punkten</p>
+
+          <div class="winner-standings-list" id="winnerStandingsList">
+            <!-- Dynamische Platzierungen -->
           </div>
 
-          <button type="button" class="dealer-strip-btn" id="btnRotateDealerManual" title="Tap to manually advance the Dealer / Round Starter">
-            <span class="dealer-icon-ring">🃏</span>
-            <div class="dealer-strip-text">
-              <span class="dealer-strip-label">Dealer / Starter</span>
-              <strong class="dealer-strip-name" id="activeDealerName">Player 1</strong>
+          <div class="winner-actions">
+            <button type="button" class="btn btn-primary btn-lg" id="btnPlayAgainSame">
+              🔄 Neue Partie (Gleiche Spieler)
+            </button>
+            <div class="winner-sub-actions">
+              <button type="button" class="btn btn-outline" id="btnUndoLastFromWinner">
+                ↩️ Letzte Runde korrigieren
+              </button>
+              <button type="button" class="btn btn-outline" id="btnBackToSetupFromWinner">
+                👥 Spieler ändern
+              </button>
             </div>
-            <svg class="dealer-rotate-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-              <polyline points="23 4 23 10 17 10"/>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+          </div>
+        </div>
+
+        <!-- Direkte Spieler-Karten Liste für die aktuelle Runde -->
+        <div id="activeRoundInputContainer" class="active-round-section">
+          <div class="instruction-strip" id="liveRoundFeedback">
+            Tippe bei einem Spieler auf <strong>📣 Cabo</strong> und gib die Kartenpunkte ein.
+          </div>
+
+          <div class="player-cards-list" id="playerCardsList">
+            <!-- Jede Karte enthält: Name, Gesamtstand, Punkte-Eingabe (-1 / Input / +1 / +5), 📣 Cabo-Button, 🦄 12-13er-Toggle & Live-Runden-Vorschau -->
+          </div>
+
+          <button type="button" class="btn btn-primary btn-xl btn-finish-round" id="btnCommitRound">
+            <span id="btnCommitRoundText">Runde 1 abschließen</span>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
             </svg>
           </button>
         </div>
 
-        <!-- Winner / Game Over Celebration Banner (Shown when threshold reached) -->
-        <div id="gameOverBanner" class="game-over-card" hidden>
-          <div class="go-sparkles" aria-hidden="true">
-            <span>🦄</span><span>✨</span><span>🏆</span><span>✨</span><span>🌈</span>
-          </div>
-          <div class="go-badge">GAME OVER • THRESHOLD REACHED</div>
-          <h2 class="go-winner-title" id="winnerHeadline">Luna Wins!</h2>
-          <p class="go-winner-sub" id="winnerSubtext">Lowest cumulative score with 24 points</p>
-          
-          <div class="go-podium" id="winnerPodiumList">
-            <!-- Populated dynamically -->
-          </div>
-
-          <div class="go-actions">
-            <button type="button" class="btn btn-primary" id="btnRematchSamePlayers">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round">
-                <polyline points="1 4 1 10 7 10"/>
-                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-              </svg>
-              <span>Play Again (Same Players)</span>
-            </button>
-            <button type="button" class="btn btn-secondary" id="btnContinueAnyway">
-              <span>Edit Rounds / Keep Playing</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Player Standings Cards (Live Leader & Threshold Progress) -->
-        <div class="standings-scroll-container" id="standingsCardsRow" aria-label="Player Standings">
-          <!-- Populated dynamically -->
-        </div>
-
-        <!-- Score Matrix Section (Columns = Players, Rows = Rounds) -->
-        <div class="surface-card matrix-container-card">
-          <div class="matrix-card-header">
-            <div>
-              <h2 id="scoreboardHeading" class="section-title">Round-by-Round Matrix</h2>
-              <p class="section-desc">Tap any completed round row to inspect or edit its scores.</p>
-            </div>
-            <span class="matrix-hint-badge" id="totalRoundsPlayedBadge">0 Rounds</span>
-          </div>
-
-          <div class="matrix-table-wrapper">
-            <table class="score-matrix-table" id="scoreMatrixTable">
-              <thead id="matrixThead">
-                <!-- Populated dynamically: Round # | Player 1 | Player 2 | ... -->
-              </thead>
-              <tbody id="matrixTbody">
-                <!-- Populated dynamically: Round rows -->
-              </tbody>
-              <tfoot id="matrixTfoot">
-                <!-- Populated dynamically: Cumulative Running Totals -->
-              </tfoot>
+        <!-- Dezente, einklappbare Runden-Historie darunter (falls man nachschauen möchte) -->
+        <details class="history-accordion" id="historyAccordion" hidden>
+          <summary class="history-summary">
+            <span>Bisherige Runden anzeigen (<span id="historyCountText">0</span>)</span>
+            <span class="history-chevron">▼</span>
+          </summary>
+          <div class="history-table-wrap">
+            <table class="history-table" id="historyTable">
+              <thead id="historyThead"></thead>
+              <tbody id="historyTbody"></tbody>
             </table>
-
-            <!-- Empty state before Round 1 is logged -->
-            <div id="matrixEmptyState" class="matrix-empty-state">
-              <div class="empty-unicorn-art">
-                <svg viewBox="0 0 80 80" width="60" height="60">
-                  <circle cx="40" cy="40" r="36" fill="#121824" stroke="#334155" stroke-width="2" stroke-dasharray="4 4"/>
-                  <polygon points="42,24 62,8 48,30" fill="#FDE047"/>
-                  <path d="M24,66 C26,50 32,40 38,30 L33,23 C32,20 36,18 40,22 L43,24 C48,22 54,25 58,32 L64,42 C66,46 64,51 59,50 C54,49 51,46 48,44 C46,52 48,60 51,66 Z" fill="#CBD5E1"/>
-                </svg>
-              </div>
-              <p class="empty-title">No rounds recorded yet</p>
-              <p class="empty-sub">Deal 4 cards to each player, play Round 1, and tap <strong>Enter Round 1 Scores</strong> below when someone calls Cabo!</p>
-            </div>
           </div>
-        </div>
+        </details>
       </section>
     </main>
-
-    <!-- Sticky Bottom Action Bar (Active in Game View) -->
-    <div class="sticky-bottom-bar" id="stickyBottomBar" hidden>
-      <button type="button" class="btn btn-primary btn-lg btn-log-round" id="btnOpenRoundEntry">
-        <span class="cabo-eye-icon">👁️</span>
-        <span id="btnOpenRoundEntryText">Enter Round 1 Scores</span>
-      </button>
-    </div>
   </div>
 
-  <!-- ==================== MODAL 1: ROUND SCORE ENTRY & EDIT SHEET ==================== -->
-  <div class="modal-backdrop" id="roundEntryModal" role="dialog" aria-modal="true" aria-labelledby="roundModalTitle" hidden>
-    <div class="modal-sheet round-entry-sheet">
+  <!-- ==================== VERSCHACHTELTES MENÜ: STATISTIK & SPIEL-OPTIONEN ==================== -->
+  <div class="modal-backdrop" id="menuModal" role="dialog" aria-modal="true" aria-labelledby="menuModalTitle" hidden>
+    <div class="modal-sheet">
       <div class="sheet-handle" aria-hidden="true"></div>
 
       <div class="sheet-header">
         <div>
-          <span class="sheet-eyebrow" id="roundModalEyebrow">END OF ROUND</span>
-          <h2 class="sheet-title" id="roundModalTitle">Round 1 Scoring</h2>
+          <span class="sheet-eyebrow">CABO SCOREKEEPER</span>
+          <h2 class="sheet-title" id="menuModalTitle">Statistik &amp; Menü</h2>
         </div>
-        <div class="sheet-header-actions">
-          <button type="button" class="btn-delete-round" id="btnDeleteRound" title="Delete this round" hidden>
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-              <path d="M10 11v6M14 11v6"/>
-            </svg>
-          </button>
-          <button type="button" class="icon-btn" id="btnCloseRoundModal" aria-label="Close modal">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
+        <button type="button" class="icon-btn" id="btnCloseMenu" aria-label="Menü schließen">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
       </div>
 
       <div class="sheet-body">
-        <!-- STEP 1: CABO CALLER SELECTION -->
-        <div class="cabo-caller-section">
-          <div class="caller-header-row">
-            <label class="caller-section-label">
-              <span class="caller-megaphone">📣</span>
-              Who called <strong>"CABO"</strong> this round?
-            </label>
-            <span class="caller-required-tag" id="callerStatusHint">Select caller</span>
+        <!-- Schnellaktionen fürs laufende Spiel -->
+        <div class="menu-section" id="inGameActionsSection">
+          <h3 class="menu-section-title">Aktuelles Spiel</h3>
+          <div class="menu-btn-group">
+            <button type="button" class="menu-action-card" id="btnMenuRestartSame">
+              <span class="menu-icon">🔄</span>
+              <div>
+                <strong>Runden zurücksetzen</strong>
+                <small>Neues Spiel mit denselben Spielern starten</small>
+              </div>
+            </button>
+            <button type="button" class="menu-action-card" id="btnMenuChangePlayers">
+              <span class="menu-icon">👥</span>
+              <div>
+                <strong>Spieler &amp; Modus anpassen</strong>
+                <small>Zurück zum Startbildschirm</small>
+              </div>
+            </button>
           </div>
-          <div class="caller-pills-grid" id="callerSelectionGrid" role="radiogroup" aria-label="Who called Cabo">
-            <!-- Dynamically rendered player buttons + "Deck Ran Out (No Caller)" option -->
+        </div>
+
+        <!-- Ewige Bestenliste (Siege pro Spieler) -->
+        <div class="menu-section">
+          <div class="menu-section-head">
+            <h3 class="menu-section-title">🏆 Ewige Bestenliste</h3>
+            <button type="button" class="btn-text-danger" id="btnClearStats">Statistik löschen</button>
+          </div>
+
+          <div id="leaderboardContainer" class="leaderboard-list">
+            <!-- Dynamisch gefüllt -->
           </div>
         </div>
 
-        <!-- STEP 2: PLAYER CARD SUMS & 12-12-13-13 RULE TRACKER -->
-        <div class="round-players-entry-list" id="roundPlayersEntryList">
-          <!-- Dynamically rendered player score entry cards -->
+        <!-- Letzte beendete Partien -->
+        <div class="menu-section" id="recentMatchesSection">
+          <h3 class="menu-section-title">🕓 Letzte beendete Partien</h3>
+          <div id="recentMatchesList" class="recent-matches-list">
+            <!-- Dynamisch gefüllt -->
+          </div>
         </div>
 
-        <!-- LIVE VALIDATION PREVIEW BANNER -->
-        <div class="cabo-validation-preview" id="caboValidationBanner">
-          <!-- Dynamically shows who succeeded or failed Cabo call and exact calculation -->
-        </div>
-      </div>
-
-      <div class="sheet-footer">
-        <button type="button" class="btn btn-secondary" id="btnCancelRoundModal">Cancel</button>
-        <button type="button" class="btn btn-primary btn-save-round" id="btnSaveRound">
-          <span id="btnSaveRoundText">Save Round 1</span>
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ==================== MODAL 2: CABO RULES & CARD REFERENCE ==================== -->
-  <div class="modal-backdrop" id="rulesModal" role="dialog" aria-modal="true" aria-labelledby="rulesModalTitle" hidden>
-    <div class="modal-sheet rules-sheet">
-      <div class="sheet-handle" aria-hidden="true"></div>
-      <div class="sheet-header">
-        <div>
-          <span class="sheet-eyebrow">AUTHENTIC CABO GUIDE</span>
-          <h2 class="sheet-title" id="rulesModalTitle">Cards &amp; Scoring Rules</h2>
-        </div>
-        <button type="button" class="icon-btn" id="btnCloseRulesModal" aria-label="Close rules">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-            <line x1="18" y1="6" x2="6" y2="18"/>
-            <line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-        </button>
-      </div>
-
-      <div class="sheet-body rules-body">
-        <div class="rules-block">
-          <h3>🎯 Calling "CABO" &amp; Penalties</h3>
-          <ul>
-            <li><strong>Successful Call:</strong> If the player who called <em>Cabo</em> has the strictly lowest (or tied for lowest) raw card sum, they score <strong>0 points</strong> for the round!</li>
-            <li><strong>Failed Call:</strong> If another player has a strictly lower card sum, the Cabo caller fails and receives a <strong>+10 point penalty</strong> (either <em>Card Sum + 10</em> in official rules, or <em>Flat +10</em> depending on your setup toggle).</li>
-            <li><strong>Other Players:</strong> Always score the sum of their remaining cards.</li>
+        <!-- Kurz-Erklärung der aktiven Regeln -->
+        <div class="menu-section rules-mini-box">
+          <h3 class="menu-section-title">📖 Aktive Cabo-Regeln</h3>
+          <ul class="rules-mini-list">
+            <li><strong>Cabo-Ruf:</strong> Niedrigste (oder gleich niedrige) Summe = <strong>0 Punkte</strong>. Sonst <strong>Kartensumme + 5 Strafpunkte</strong>.</li>
+            <li><strong>12-13er-Regel (Kamikaze):</strong> Wer am Ende 12-12-13-13 hält, bekommt <strong>0 Punkte</strong>, alle anderen erhalten <strong>+50 Punkte</strong> (bzw. <strong>+25</strong> im Speed-Modus).</li>
+            <li><strong>Exakte Punktlandung:</strong> Wer exakt auf <strong>100</strong> (bzw. <strong>50</strong>) landet, wird einmalig pro Spiel auf <strong>50</strong> (bzw. <strong>25</strong>) zurückgestuft!</li>
           </ul>
         </div>
-
-        <div class="rules-block">
-          <h3>🦄 The "12-12-13-13" Rule (Shooting the Moon)</h3>
-          <p>If any player finishes the round holding <strong>both 12s and both 13s</strong> (raw sum of 50):</p>
-          <ul>
-            <li><strong>Official Rule:</strong> That player scores <strong>0 points</strong>, and <strong>every other player receives +50 points</strong>!</li>
-            <li><strong>Minus-50 Variant:</strong> Alternatively, toggle the <em>-50 pts</em> variant in Setup so that player deducts 50 points from their total.</li>
-          </ul>
-        </div>
-
-        <div class="rules-block">
-          <h3>💥 Exact Threshold Reset ("Kamikaze")</h3>
-          <p>If a player's cumulative total lands on <strong>exactly 100 points</strong> (or <strong>50 points</strong> in Speed Mode), their total score immediately drops back down to <strong>50</strong> (or <strong>25</strong>) once per game instead of ending the game!</p>
-        </div>
-
-        <div class="rules-block">
-          <h3>🃏 Iconic Cabo Cards &amp; Powers</h3>
-          <div class="card-ref-grid">
-            <div class="ref-item">
-              <span class="ref-badge ref-0">0</span>
-              <div><strong>Unicorn</strong><small>Zero points — keep at all costs!</small></div>
-            </div>
-            <div class="ref-item">
-              <span class="ref-badge ref-1">1–6</span>
-              <div><strong>Feather, Asparagus, Birds, Mice</strong><small>Low value cards (no action power).</small></div>
-            </div>
-            <div class="ref-item">
-              <span class="ref-badge ref-7">7–8</span>
-              <div><strong>Peek (Koi / Snakes)</strong><small>Secretly look at 1 of your own face-down cards.</small></div>
-            </div>
-            <div class="ref-item">
-              <span class="ref-badge ref-9">9–10</span>
-              <div><strong>Spy (Glasses / Hat)</strong><small>Secretly look at 1 of an opponent's cards.</small></div>
-            </div>
-            <div class="ref-item">
-              <span class="ref-badge ref-11">11–12</span>
-              <div><strong>Swap (Dog / Crystal)</strong><small>Blindly swap 1 of your cards with an opponent's card.</small></div>
-            </div>
-            <div class="ref-item">
-              <span class="ref-badge ref-13">13</span>
-              <div><strong>Rainbow Glue</strong><small>Highest penalty (13 pts) — ditch it unless going for 12-12-13-13!</small></div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
 
-  <!-- ==================== MODAL 3: GAME OPTIONS / RESET MENU ==================== -->
-  <div class="modal-backdrop" id="gameMenuModal" role="dialog" aria-modal="true" aria-labelledby="gameMenuTitle" hidden>
-    <div class="modal-sheet menu-sheet">
-      <div class="sheet-handle" aria-hidden="true"></div>
-      <div class="sheet-header">
-        <div>
-          <span class="sheet-eyebrow">MATCH CONTROLS</span>
-          <h2 class="sheet-title" id="gameMenuTitle">Game Options</h2>
-        </div>
-        <button type="button" class="icon-btn" id="btnCloseGameMenu" aria-label="Close menu">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-            <line x1="18" y1="6" x2="6" y2="18"/>
-            <line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-        </button>
-      </div>
-
-      <div class="sheet-body menu-options-list">
-        <div class="menu-setting-group">
-          <label class="menu-setting-label">Switch Game Mode Mid-Game</label>
-          <div class="segmented-control" id="midGameThresholdToggle">
-            <button type="button" class="seg-btn" data-mid-threshold="100">Standard (100 pts)</button>
-            <button type="button" class="seg-btn" data-mid-threshold="50">Speed Mode (50 pts)</button>
-          </div>
-        </div>
-
-        <button type="button" class="menu-action-btn" id="btnMenuRematch">
-          <span class="menu-action-icon">🔄</span>
-          <div class="menu-action-text">
-            <strong>Reset Scores (Same Players)</strong>
-            <small>Clear all rounds and start Round 1 with current players</small>
-          </div>
-        </button>
-
-        <button type="button" class="menu-action-btn menu-action-danger" id="btnMenuNewSetup">
-          <span class="menu-action-icon">⚙️</span>
-          <div class="menu-action-text">
-            <strong>New Game Setup (Change Players)</strong>
-            <small>Return to player roster &amp; rule configuration screen</small>
-          </div>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Toast Notification Container -->
+  <!-- Toast-Benachrichtigungen -->
   <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
-  <script src="./app.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>

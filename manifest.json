@@ -1,23 +1,24 @@
 {
   "name": "Cabo Scorekeeper",
   "short_name": "Cabo",
-  "description": "100% Offline Progressive Web App for tracking scores in the card game Cabo.",
-  "start_url": "./",
-  "scope": "./",
+  "description": "Minimalistischer, 100% offline-fähiger Punktezähler für das Kartenspiel Cabo.",
+  "lang": "de",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#121824",
-  "theme_color": "#121824",
+  "background_color": "#F8FAFC",
+  "theme_color": "#4D9B36",
   "categories": ["games", "utilities"],
   "icons": [
     {
-      "src": "./icon.svg",
+      "src": "/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "./icon-maskable.svg",
+      "src": "/icon-maskable.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "maskable"

@@ -1,23 +1,14 @@
-# 🦄 Cabo Scorekeeper (PWA)
+# 🦄 Cabo Punktezähler (PWA)
 
-A mobile-first, 100% offline-capable Progressive Web App (PWA) for tracking scores in the card game **Cabo**.
+Ein radikal vereinfachter, heller und 100 % offline-fähiger Progressive Web App (PWA) Punktezähler für das Kartenspiel **Cabo** (komplett auf Deutsch).
 
 ## ✨ Features
 
-- **Authentic Cabo Theme:** Inspired by the official physical Cabo deck (`0` Unicorn, `1` Feather, `3` Asparagus, `9/10` Spy Glasses, `12` Geometric Swap, `13` Rainbow Glue) with a dark-slate charcoal palette (`#121824`) and vibrant neon-pastel highlights.
-- **Game Modes:** Choose between **Standard Mode (100 points)** and **Speed Mode (50 points)**.
-- **Automatic Dealer / Starter Rotation:** Automatically rotates the dealer marker to the next player after every round.
-- **Automatic "CABO" Call Validation:**
-  - If the Cabo caller has strictly the lowest (or tied lowest) card sum, their round score is automatically set to **`0`**.
-  - If another player has a lower sum, the **+10 penalty** (`Card Sum + 10` or `Flat +10` variant) is automatically applied.
-- **"12-12-13-13" Rule Tracker (Shooting the Moon):** Quick toggle per player when holding both `12`s and both `13`s at the end of a round (`0 pts` for the holder and `+50 pts` to all other players, or `-50 pts` house variant).
-- **Exact Threshold Reset ("Kamikaze" Rule):** Hitting *exactly* `100` (or `50` in Speed Mode) resets that player's total to `50` (or `25`) once per game.
-- **Full History Editing & Undo:** Tap any completed round in the score matrix to edit or delete it with instant reactive recalculation across all subsequent rounds.
-- **100% Offline & Local Persistence:** Auto-saves every change to `localStorage` and `IndexedDB`, and caches all assets via Service Worker (`sw.js`).
-
-## 🚀 Deployment (GitHub Pages / Vercel / Netlify)
-
-No build step or external dependencies are required.
-
-1. Upload all files in this folder to a new GitHub repository.
-2. Enable **GitHub Pages** (Settings → Pages → Deploy from `main` branch `/ (root)`), or connect the repository directly to **Vercel** or **Netlify**.
+- **Helles, freundliches Design:** Sanfter Creme-/Pergament-Hintergrund (`#F8FAFC`), klare weiße Karten (`#FFFFFF`) und natürliche Grün-, Sonnengold- und Lavendel-Akzente passend zur originalen Cabo-Schachtel.
+- **Ultra-Lean Hauptbildschirm:** Keine verschachtelten Popups beim Spielen – Punkte-Eingabe (`-1`, Direktfeld, `+1`, `+5`), **📣 Cabo-Rufer** und **🦄 12-13er-Toggle** befinden sich direkt auf den Spielerkarten.
+- **Dauerhaft aktiver Kamikaze-Modus & Offizielle Deutsche Regeln:**
+  - **Cabo-Ruf:** Niedrigste (oder geteilt niedrigste) Kartensumme = **`0 Punkte`**. Fehlgeschlagener Ruf = **`Kartensumme + 5 Strafpunkte`**.
+  - **12-13er-Regel (Kamikaze):** Hält ein Spieler `12-12-13-13`, bekommt er **`0 Punkte`** und alle anderen erhalten automatisch **`+50 Punkte`** (im Standard-Modus) bzw. **`+25 Punkte`** (im Speed-Modus).
+  - **Exakte Punktlandung:** Landet ein Spieler exakt auf **`100`** (bzw. **`50`** im Speed-Modus), wird sein Punktestand einmalig pro Spiel automatisch auf **`50`** (bzw. **`25`**) halbiert.
+- **Verschachtelte Sieges-Statistik:** Über den Button **„Menü & Siege“** oben rechts lässt sich jederzeit die **Ewige Bestenliste** (Siege, gespielte Partien & Siegquote pro Spielername) sowie die Historie der letzten beendeten Spiele einsehen.
+- **100 % Offline & Root-Deployment-Ready:** Speichert jeden Schritt sofort in `localStorage` und funktioniert dank Service Worker (`/sw.js`) und Manifest (`/manifest.json`) komplett ohne Internetverbindung.
